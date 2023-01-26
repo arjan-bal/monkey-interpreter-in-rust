@@ -1,0 +1,1 @@
+An interpreter written in Rust for the monkey programming language described in the book "Writing An Interpreter In Go" (https://interpreterbook.com/).
