@@ -1,42 +1,42 @@
 #[derive(PartialEq, Debug)]
 pub enum Token {
-    ILLEGAL,
+    Illegal,
     EOF,
 
     // Identifiers + literals
-    IDENT(String),
-    INT(i64),
+    Ident(String),
+    Int(i64),
 
     // Booleans
-    TRUE,
-    FALSE,
+    True,
+    False,
 
     // Operators
-    ASSIGN,
-    PLUS,
-    MINUS,
-    BANG,
-    ASTERISK,
-    SLASH,
+    Assign,
+    Plus,
+    Minus,
+    Bang,
+    Asterisk,
+    Slash,
     EQ,
-    NOT_EQ,
+    NotEq,
 
     LT,
     GT,
 
     // Delimiters
-    COMMA,
-    SEMICOLON,
+    Comma,
+    Semicolon,
 
-    LPAREN,
-    RPAREN,
-    RBRACE,
-    LBRACE,
+    LParen,
+    RParen,
+    RBrace,
+    LBrace,
 
     // Keywords
-    FUNCTION,
-    LET,
-    IF,
-    ELSE,
-    RETURN,
+    Function,
+    Let,
+    If,
+    Else,
+    Return,
 }
