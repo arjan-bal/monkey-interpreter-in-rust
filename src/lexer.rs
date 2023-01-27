@@ -1,15 +1,17 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, path::Iter};
 
 use crate::token::Token;
 
 pub struct Lexer {
     input: VecDeque<char>,
+    finished: bool,
 }
 
 impl Lexer {
-    fn new(input: &str) -> Lexer {
+    pub fn new(input: &str) -> Lexer {
         Lexer {
             input: input.to_string().chars().collect(),
+            finished: false,
         }
     }
 
@@ -51,6 +53,7 @@ impl Lexer {
         }
 
         if input.is_empty() {
+            self.finished = true;
             return Token::EOF;
         }
 
@@ -103,6 +106,16 @@ impl Lexer {
     }
 }
 
+impl Iterator for Lexer {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+        Some(self.next_token())
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
