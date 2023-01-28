@@ -32,6 +32,16 @@ impl Program {
     pub fn get_statements(&self) -> &'_ Vec<Box<(dyn Statement + '_)>> {
         &self.statements
     }
+
+    pub fn add_statement(&mut self, statement: Box<dyn Statement>) {
+        self.statements.push(statement);
+    }
+
+    pub fn new() -> Program {
+        Program {
+            statements: Vec::new(),
+        }
+    }
 }
 
 pub struct Identifier {
@@ -40,18 +50,18 @@ pub struct Identifier {
 }
 
 impl Identifier {
-  pub fn value(&self) -> &String {
-    &self.value
-  }
+    pub fn value(&self) -> &String {
+        &self.value
+    }
     pub fn token(&self) -> &Token {
-    &self.token
-  }
+        &self.token
+    }
 }
 
 pub struct LetStatement {
     token: Token,
     name: Identifier,
-    value: Box<dyn Expression>,
+    // value: Box<dyn Expression>,
 }
 
 impl Statement for LetStatement {}
@@ -67,7 +77,24 @@ impl Node for LetStatement {
 }
 
 impl LetStatement {
-  pub fn name(&self ) -> &Identifier {
-    &self.name
-  }
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    pub fn new(token: Token, identifier: Token) -> LetStatement {
+        let name = match &identifier {
+            Token::Ident(name) => name.clone(),
+            _ => panic!(
+                "LetStatement constructor called with non identifier token: {:?}",
+                identifier
+            ),
+        };
+        LetStatement {
+            token,
+            name: Identifier {
+                token: identifier,
+                value: name,
+            },
+        }
+    }
 }

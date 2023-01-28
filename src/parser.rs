@@ -3,7 +3,11 @@ use std::{
     fmt::{self, Display},
 };
 
-use crate::{ast::Program, lexer::Lexer, token::Token};
+use crate::{
+    ast::{LetStatement, Program, Statement},
+    lexer::Lexer,
+    token::Token,
+};
 
 pub struct Parser {
     lexer: Lexer,
@@ -12,15 +16,13 @@ pub struct Parser {
 }
 
 #[derive(Debug)]
-pub struct ParseError {
-    message: String,
-}
+pub struct ParseError(String);
 
 impl Error for ParseError {}
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -41,15 +43,60 @@ impl Parser {
         self.peek_token = self.lexer.next();
     }
 
+    fn parse_let_statement(&mut self) -> Result<Box<dyn Statement>, ParseError> {
+        let let_token = self.cur_token.take().unwrap();
+        self.next_token();
+        let ident_token = match self.cur_token {
+            Some(Token::Ident(_)) => self.cur_token.take().unwrap(),
+            _ => {
+                return Err(ParseError(
+                    "Let token not followed by an identifier.".to_owned(),
+                ))
+            }
+        };
+        self.next_token();
+        if self.cur_token != Some(Token::Assign) {
+            return Err(ParseError(format!(
+                "Let statement doesn't contain assign token. Found: {:?}",
+                self.cur_token
+            )));
+        }
+        self.next_token();
+        // Remove tokens till we see a semicolon.
+        while self.cur_token != Some(Token::Semicolon) {
+            self.next_token();
+        }
+        // Don't remove the semicolon. It's removed in parse_program().
+        Ok(Box::new(LetStatement::new(let_token, ident_token)))
+    }
+
+    fn parse_statement(&mut self) -> Result<Box<dyn Statement>, ParseError> {
+        match (self.cur_token.as_ref(), self.peek_token.as_ref()) {
+            (Some(&Token::Let), _) => self.parse_let_statement(),
+            _ => Err(ParseError(format!(
+                "Unknown statement type. Found tokens {:?}, {:?}",
+                self.cur_token, self.peek_token
+            ))),
+        }
+    }
+
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
-        todo!()
+        let mut prog = Program::new();
+        while self.cur_token != None && self.cur_token != Some(Token::EOF) {
+            match self.parse_statement() {
+                Ok(s) => prog.add_statement(s),
+                Err(e) => return Err(e),
+            }
+            self.next_token();
+        }
+        Ok(prog)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{LetStatement, Statement, Node},
+        ast::{LetStatement, Node},
         lexer::Lexer,
         token::Token,
     };
@@ -68,7 +115,7 @@ let foobar = 838383;
 
         let res = p.parse_program();
         assert!(
-            !res.is_ok(),
+            res.is_ok(),
             "parsing program failed with error: {}",
             res.err().unwrap()
         );
@@ -85,11 +132,14 @@ let foobar = 838383;
                 .downcast_ref::<LetStatement>()
                 .expect("Statement is not a LetStatement!");
             assert_eq!(let_statement.name().value(), name);
-            let got_name  = match let_statement.token().unwrap() {
+            let got_name = match let_statement.name().token() {
                 Token::Ident(s) => s,
-                _ => panic!("token inside let statement isn't a Identifier!"),
+                _ => panic!(
+                    "Expected token inside let statement to be am Identifier, found: {:?}",
+                    let_statement.token()
+                ),
             };
-            assert_eq!(got_name, name);
+            assert_eq!(got_name, name)
         }
     }
 }
