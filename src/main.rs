@@ -3,6 +3,8 @@ use std::io::{stdin, stdout, Write};
 
 mod lexer;
 mod token;
+mod ast;
+mod parser;
 
 const PROMPT: &str = ">>";
 
