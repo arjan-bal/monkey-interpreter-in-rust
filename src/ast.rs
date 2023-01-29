@@ -98,3 +98,26 @@ impl LetStatement {
         }
     }
 }
+
+pub struct ReturnStatement {
+    token: Token,
+    // return_value: Box<dyn Expression>,
+}
+
+impl Statement for ReturnStatement {}
+
+impl Node for ReturnStatement {
+    fn token(&self) -> Option<&Token> {
+        Some(&self.token)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+      self
+    }
+}
+
+impl ReturnStatement {
+  pub fn new(token: Token) -> ReturnStatement {
+    ReturnStatement { token }
+  }
+}
