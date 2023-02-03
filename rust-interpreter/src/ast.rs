@@ -1,6 +1,7 @@
 use std::{any::Any, fmt::Debug};
 
 use crate::token::Token;
+use node_macro_derive::NodeMacro;
 
 pub trait Node: Debug {
     fn token(&self) -> Option<&Token>;
@@ -45,7 +46,7 @@ impl Program {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, NodeMacro)]
 pub struct Identifier {
     token: Token,
     value: String,
@@ -55,31 +56,44 @@ impl Identifier {
     pub fn value(&self) -> &String {
         &self.value
     }
-    pub fn token(&self) -> &Token {
-        &self.token
-    }
 
     pub fn new(token: Token) -> Identifier {
-      let value = if let Token::Ident(s) = &token {
-        s.clone()
-      } else {
-        panic!("Trying to create an Identifier with non-ident token");
-      };
-      Identifier { token, value }
-    }
-}
-
-impl Node for Identifier {
-    fn token(&self) -> Option<&Token> {
-        Some(&self.token)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+        let value = if let Token::Ident(s) = &token {
+            s.clone()
+        } else {
+            panic!("Trying to create an Identifier with non-ident token");
+        };
+        Identifier { token, value }
     }
 }
 
 impl Expression for Identifier {}
+
+#[derive(Debug, NodeMacro)]
+pub struct IntegerLiteral {
+    token: Token,
+    value: i64,
+}
+
+impl IntegerLiteral {
+    pub fn new(token: Token) -> IntegerLiteral {
+        let value = if let Token::Int(x) = token {
+            x
+        } else {
+            panic!(
+                "Trying to create an IntegerLiteral with non int token: {:?}",
+                token
+            );
+        };
+        IntegerLiteral { token, value }
+    }
+
+    pub fn value(&self) -> i64 {
+        self.value
+    }
+}
+
+impl Expression for IntegerLiteral {}
 
 #[derive(Debug)]
 pub struct LetStatement {
@@ -123,7 +137,7 @@ impl LetStatement {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, NodeMacro)]
 pub struct ReturnStatement {
     token: Token,
     // return_value: Box<dyn Expression>,
@@ -131,36 +145,16 @@ pub struct ReturnStatement {
 
 impl Statement for ReturnStatement {}
 
-impl Node for ReturnStatement {
-    fn token(&self) -> Option<&Token> {
-        Some(&self.token)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 impl ReturnStatement {
     pub fn new(token: Token) -> ReturnStatement {
         ReturnStatement { token }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, NodeMacro)]
 pub struct ExpressionStatement {
     token: Token, // the first token of the expression
     expression: Box<dyn Expression>,
-}
-
-impl Node for ExpressionStatement {
-    fn token(&self) -> Option<&Token> {
-        Some(&self.token)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }
 
 impl Statement for ExpressionStatement {}

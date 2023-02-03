@@ -284,7 +284,7 @@ let foobar = 838383;
                 .downcast_ref::<LetStatement>()
                 .expect("Statement is not a LetStatement!");
             assert_eq!(let_statement.name().value(), name);
-            let got_name = match let_statement.name().token() {
+            let got_name = match let_statement.name().token().unwrap() {
                 Token::Ident(s) => s,
                 _ => panic!(
                     "Expected token inside let statement to be am Identifier, found: {:?}",
@@ -349,7 +349,7 @@ return 993322;
             .as_any()
             .downcast_ref::<Identifier>()
             .expect("expression is not an identifier");
-        assert_eq!(expression.token(), &Token::Ident("foobar".to_owned()));
+        assert_eq!(expression.token().unwrap(), &Token::Ident("foobar".to_owned()));
         assert_eq!(expression.value(), "foobar");
     }
 }
