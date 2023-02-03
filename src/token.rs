@@ -1,4 +1,4 @@
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Eq, Hash)]
 pub enum Token {
     Illegal,
     EOF,
@@ -39,4 +39,14 @@ pub enum Token {
     If,
     Else,
     Return,
+}
+
+impl Token {
+    pub fn get_representative_token(&self) -> Token {
+        match self {
+            Token::Ident(_) => Token::Ident("".to_owned()),
+            Token::Int(_) => Token::Int(0),
+            _ => self.to_owned(),
+        }
+    }
 }

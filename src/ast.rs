@@ -1,8 +1,8 @@
-use std::any::Any;
+use std::{any::Any, fmt::Debug};
 
 use crate::token::Token;
 
-pub trait Node {
+pub trait Node: Debug {
     fn token(&self) -> Option<&Token>;
     fn as_any(&self) -> &dyn Any; // Required only for downcast during tests.
 }
@@ -11,6 +11,7 @@ pub trait Expression: Node {}
 
 pub trait Statement: Node {}
 
+#[derive(Debug)]
 pub struct Program {
     statements: Vec<Box<dyn Statement>>,
 }
@@ -44,6 +45,7 @@ impl Program {
     }
 }
 
+#[derive(Debug)]
 pub struct Identifier {
     token: Token,
     value: String,
@@ -56,8 +58,30 @@ impl Identifier {
     pub fn token(&self) -> &Token {
         &self.token
     }
+
+    pub fn new(token: Token) -> Identifier {
+      let value = if let Token::Ident(s) = &token {
+        s.clone()
+      } else {
+        panic!("Trying to create an Identifier with non-ident token");
+      };
+      Identifier { token, value }
+    }
 }
 
+impl Node for Identifier {
+    fn token(&self) -> Option<&Token> {
+        Some(&self.token)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Expression for Identifier {}
+
+#[derive(Debug)]
 pub struct LetStatement {
     token: Token,
     name: Identifier,
@@ -99,6 +123,7 @@ impl LetStatement {
     }
 }
 
+#[derive(Debug)]
 pub struct ReturnStatement {
     token: Token,
     // return_value: Box<dyn Expression>,
@@ -112,12 +137,43 @@ impl Node for ReturnStatement {
     }
 
     fn as_any(&self) -> &dyn Any {
-      self
+        self
     }
 }
 
 impl ReturnStatement {
-  pub fn new(token: Token) -> ReturnStatement {
-    ReturnStatement { token }
-  }
+    pub fn new(token: Token) -> ReturnStatement {
+        ReturnStatement { token }
+    }
+}
+
+#[derive(Debug)]
+pub struct ExpressionStatement {
+    token: Token, // the first token of the expression
+    expression: Box<dyn Expression>,
+}
+
+impl Node for ExpressionStatement {
+    fn token(&self) -> Option<&Token> {
+        Some(&self.token)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Statement for ExpressionStatement {}
+
+impl ExpressionStatement {
+    pub fn expression(&self) -> &Box<dyn Expression> {
+        &self.expression
+    }
+
+    pub fn new(token: Token, exp: Box<dyn Expression>) -> ExpressionStatement {
+        ExpressionStatement {
+            token,
+            expression: exp,
+        }
+    }
 }
