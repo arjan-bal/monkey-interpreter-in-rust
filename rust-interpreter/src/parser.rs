@@ -4,20 +4,23 @@ use std::{
     fmt::{self, Display},
 };
 
-use quote::__private::parse;
-
 use crate::{
     ast::{
-        Expression, ExpressionStatement, Identifier, IntegerLiteral, LetStatement, Program,
-        ReturnStatement, Statement,
+        Expression, ExpressionStatement, Identifier, IntegerLiteral, LetStatement,
+        PrefixExpression, Program, ReturnStatement, Statement,
     },
     lexer::Lexer,
     token::Token,
 };
 
-type PrefixParseFn = Box<dyn Fn(&mut ParserInternal) -> Result<Box<dyn Expression>, ParseError>>;
+type PrefixParseFn =
+    Box<dyn Fn(&mut ParserInternal, &ParsingContext) -> Result<Box<dyn Expression>, ParseError>>;
 type InfixParseFn = Box<
-    dyn Fn(&mut ParserInternal, Box<dyn Expression>) -> Result<Box<dyn Expression>, ParseError>,
+    dyn Fn(
+        &mut ParserInternal,
+        Box<dyn Expression>,
+        &ParsingContext,
+    ) -> Result<Box<dyn Expression>, ParseError>,
 >;
 
 struct ParserInternal {
@@ -116,6 +119,8 @@ impl ParserInternal {
             Token::Ident(String::from("")),
         ));
         prefix_fns.push((ParserInternal::parse_integer_literal(), Token::Int(0)));
+        prefix_fns.push((ParserInternal::parse_prefix_expressions(), Token::Bang));
+        prefix_fns.push((ParserInternal::parse_prefix_expressions(), Token::Minus));
         while !prefix_fns.is_empty() {
             let (func, token) = prefix_fns.pop().unwrap();
             ctx.register_prefix(&token.get_representative_token(), func);
@@ -124,7 +129,7 @@ impl ParserInternal {
     }
 
     fn parse_identifier() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal| {
+        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
             let ident = parser.cur_token.as_ref().unwrap().clone();
             let res: Box<dyn Expression> = Box::new(Identifier::new(ident));
             Ok(res)
@@ -133,7 +138,7 @@ impl ParserInternal {
     }
 
     fn parse_integer_literal() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal| {
+        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
             let integer_literal = parser.cur_token.as_ref().unwrap().clone();
             let res: Box<dyn Expression> = Box::new(IntegerLiteral::new(integer_literal));
             Ok(res)
@@ -158,7 +163,21 @@ impl ParserInternal {
                 )))
             }
         };
-        prefix_fn(self)
+        prefix_fn(self, ctx)
+    }
+
+    fn parse_prefix_expressions() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
+            let token = parser.cur_token.take().unwrap();
+            parser.next_token();
+            let right_expression = match parser.parse_expression(Precedence::PREFIX, ctx) {
+                Ok(exp) => exp,
+                Err(e) => return Err(e),
+            };
+            let res: Box<dyn Expression> = Box::new(PrefixExpression::new(token, right_expression));
+            Ok(res)
+        };
+        Box::new(f)
     }
 
     fn parse_expression_statement(
@@ -266,12 +285,24 @@ impl ParserInternal {
 mod tests {
     use crate::{
         ast::{
-            ExpressionStatement, Identifier, IntegerLiteral, LetStatement, Node, ReturnStatement,
+            Expression, ExpressionStatement, Identifier, IntegerLiteral, LetStatement, Node,
+            PrefixExpression, Program, ReturnStatement, Statement,
         },
         lexer::Lexer,
         parser::Parser,
         token::Token,
     };
+
+    use super::ParseErrors;
+
+    fn check_parse_errors(res: Result<Program, ParseErrors>) -> Program {
+        assert!(
+            res.is_ok(),
+            "parsing program failed with error: {}",
+            res.err().unwrap()
+        );
+        res.unwrap()
+    }
 
     #[test]
     fn test_let_statement() {
@@ -283,14 +314,8 @@ let foobar = 838383;
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
 
-        let res = p.parse_program();
-        assert!(
-            res.is_ok(),
-            "parsing program failed with error: {}",
-            res.err().unwrap()
-        );
-        let program = res.unwrap();
-        let statements = program.get_statements();
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements();
         assert_eq!(statements.len(), 3, "program doesn't contain 3 statements");
         let expected_identifiers = ["x", "y", "foobar"];
 
@@ -323,14 +348,8 @@ return 993322;
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
 
-        let res = p.parse_program();
-        assert!(
-            res.is_ok(),
-            "parsing program failed with errors: {}",
-            res.err().unwrap()
-        );
-        let program = res.unwrap();
-        let statements = program.get_statements();
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements();
         assert_eq!(statements.len(), 3, "program doesn't contain 3 statements");
 
         for statement in statements.iter() {
@@ -342,26 +361,25 @@ return 993322;
         }
     }
 
+    fn check_expression_statement<'a>(
+        statement: &'a Box<dyn Statement + 'a>,
+    ) -> &'a ExpressionStatement {
+        statement
+            .as_any()
+            .downcast_ref::<ExpressionStatement>()
+            .expect("Statement is not an ExpressionStatement!")
+    }
+
     #[test]
     fn test_identifier_expression() {
         let input = "foobar;";
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
 
-        let res = p.parse_program();
-        assert!(
-            res.is_ok(),
-            "parsing program failed with errors: {}",
-            res.err().unwrap()
-        );
-        let program = res.unwrap();
-        let statements = program.get_statements();
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements();
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
-
-        let expression_statement = statements[0]
-            .as_any()
-            .downcast_ref::<ExpressionStatement>()
-            .expect("Statement is not an ExpressionStatement!");
+        let expression_statement = check_expression_statement(&statements[0]);
         let expression = expression_statement
             .expression()
             .as_any()
@@ -374,32 +392,63 @@ return 993322;
         assert_eq!(expression.value(), "foobar");
     }
 
+    fn test_integer_literal(expression: &Box<dyn Expression>, value: i64) {
+        let int_literal = expression
+            .as_any()
+            .downcast_ref::<IntegerLiteral>()
+            .expect("expression is not an IntegerLiteral");
+        assert_eq!(int_literal.token().unwrap(), &Token::Int(value));
+        assert_eq!(int_literal.value(), value);
+    }
+
     #[test]
     fn test_integer_literal_expression() {
         let input = "5;";
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
 
-        let res = p.parse_program();
-        assert!(
-            res.is_ok(),
-            "parsing program failed with errors: {}",
-            res.err().unwrap()
-        );
-        let program = res.unwrap();
-        let statements = program.get_statements();
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements();
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
 
-        let expression_statement = statements[0]
-            .as_any()
-            .downcast_ref::<ExpressionStatement>()
-            .expect("Statement is not an ExpressionStatement!");
-        let expression = expression_statement
-            .expression()
-            .as_any()
-            .downcast_ref::<IntegerLiteral>()
-            .expect("expression is not an IntegerLiteral");
-        assert_eq!(expression.token().unwrap(), &Token::Int(5));
-        assert_eq!(expression.value(), 5);
+        let expression_statement = check_expression_statement(&statements[0]);
+        test_integer_literal(expression_statement.expression(), 5);
+    }
+
+    #[test]
+    fn test_prefix_expression() {
+        struct TestCase<'a> {
+            input: &'a str,
+            operator: &'a Token,
+            integer_value: i64,
+        }
+        let tests = [
+            TestCase {
+                input: "!5",
+                operator: &Token::Bang,
+                integer_value: 5,
+            },
+            TestCase {
+                input: "-15",
+                operator: &Token::Minus,
+                integer_value: 15,
+            },
+        ];
+
+        for tc in tests.iter() {
+            let l = Lexer::new(tc.input);
+            let mut p = Parser::new(l);
+            let program = check_parse_errors(p.parse_program());
+            let statements = program.statements();
+            assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+            let expression_statement = check_expression_statement(&statements[0]);
+            let prefix_exp = expression_statement
+                .expression()
+                .as_any()
+                .downcast_ref::<PrefixExpression>()
+                .expect("expression is not a prefix expression");
+            assert_eq!(prefix_exp.token().unwrap(), tc.operator);
+            test_integer_literal(prefix_exp.right(), tc.integer_value);
+        }
     }
 }

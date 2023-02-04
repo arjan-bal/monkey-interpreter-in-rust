@@ -31,7 +31,7 @@ impl Node for Program {
 }
 
 impl Program {
-    pub fn get_statements(&self) -> &'_ Vec<Box<(dyn Statement + '_)>> {
+    pub fn statements(&self) -> &'_ Vec<Box<(dyn Statement + '_)>> {
         &self.statements
     }
 
@@ -94,6 +94,24 @@ impl IntegerLiteral {
 }
 
 impl Expression for IntegerLiteral {}
+
+#[derive(Debug, NodeMacro)]
+pub struct PrefixExpression {
+    token: Token,
+    right: Box<dyn Expression>,
+}
+
+impl Expression for PrefixExpression {}
+
+impl PrefixExpression {
+    pub fn right(&self) -> &Box<dyn Expression> {
+        &self.right
+    }
+
+    pub fn new(token: Token, exp: Box<dyn Expression>) -> PrefixExpression {
+        PrefixExpression { token, right: exp }
+    }
+}
 
 #[derive(Debug)]
 pub struct LetStatement {
