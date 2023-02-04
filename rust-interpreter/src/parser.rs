@@ -4,10 +4,12 @@ use std::{
     fmt::{self, Display},
 };
 
+use quote::__private::parse;
+
 use crate::{
     ast::{
-        Expression, ExpressionStatement, Identifier, LetStatement, Program, ReturnStatement,
-        Statement,
+        Expression, ExpressionStatement, Identifier, IntegerLiteral, LetStatement, Program,
+        ReturnStatement, Statement,
     },
     lexer::Lexer,
     token::Token,
@@ -108,18 +110,32 @@ impl ParserInternal {
         };
         p.next_token();
         p.next_token();
-        let ident_func = ParserInternal::parse_identifier();
-        ctx.register_prefix(
-            &Token::Ident("".to_owned()).get_representative_token(),
-            ident_func,
-        );
+        let mut prefix_fns = Vec::new();
+        prefix_fns.push((
+            ParserInternal::parse_identifier(),
+            Token::Ident(String::from("")),
+        ));
+        prefix_fns.push((ParserInternal::parse_integer_literal(), Token::Int(0)));
+        while !prefix_fns.is_empty() {
+            let (func, token) = prefix_fns.pop().unwrap();
+            ctx.register_prefix(&token.get_representative_token(), func);
+        }
         p
     }
 
     fn parse_identifier() -> PrefixParseFn {
         let f = |parser: &mut ParserInternal| {
             let ident = parser.cur_token.as_ref().unwrap().clone();
-            let res: Box<dyn Expression> = Box::new(Identifier::new(ident.clone()));
+            let res: Box<dyn Expression> = Box::new(Identifier::new(ident));
+            Ok(res)
+        };
+        Box::new(f)
+    }
+
+    fn parse_integer_literal() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal| {
+            let integer_literal = parser.cur_token.as_ref().unwrap().clone();
+            let res: Box<dyn Expression> = Box::new(IntegerLiteral::new(integer_literal));
             Ok(res)
         };
         Box::new(f)
@@ -249,7 +265,9 @@ impl ParserInternal {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{ExpressionStatement, Identifier, LetStatement, Node, ReturnStatement},
+        ast::{
+            ExpressionStatement, Identifier, IntegerLiteral, LetStatement, Node, ReturnStatement,
+        },
         lexer::Lexer,
         parser::Parser,
         token::Token,
@@ -349,7 +367,39 @@ return 993322;
             .as_any()
             .downcast_ref::<Identifier>()
             .expect("expression is not an identifier");
-        assert_eq!(expression.token().unwrap(), &Token::Ident("foobar".to_owned()));
+        assert_eq!(
+            expression.token().unwrap(),
+            &Token::Ident("foobar".to_owned())
+        );
         assert_eq!(expression.value(), "foobar");
+    }
+
+    #[test]
+    fn test_integer_literal_expression() {
+        let input = "5;";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+
+        let res = p.parse_program();
+        assert!(
+            res.is_ok(),
+            "parsing program failed with errors: {}",
+            res.err().unwrap()
+        );
+        let program = res.unwrap();
+        let statements = program.get_statements();
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+
+        let expression_statement = statements[0]
+            .as_any()
+            .downcast_ref::<ExpressionStatement>()
+            .expect("Statement is not an ExpressionStatement!");
+        let expression = expression_statement
+            .expression()
+            .as_any()
+            .downcast_ref::<IntegerLiteral>()
+            .expect("expression is not an IntegerLiteral");
+        assert_eq!(expression.token().unwrap(), &Token::Int(5));
+        assert_eq!(expression.value(), 5);
     }
 }
