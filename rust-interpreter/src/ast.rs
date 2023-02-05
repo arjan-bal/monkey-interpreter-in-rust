@@ -113,6 +113,43 @@ impl PrefixExpression {
     }
 }
 
+#[derive(Debug, NodeMacro)]
+pub struct InfixExpression {
+    token: Token,
+    left: Box<dyn Expression>,
+    right: Box<dyn Expression>,
+    operator: Token,
+}
+
+impl Expression for InfixExpression {}
+
+impl InfixExpression {
+    pub fn left(&self) -> &Box<dyn Expression> {
+        &self.left
+    }
+
+    pub fn right(&self) -> &Box<dyn Expression> {
+        &self.right
+    }
+
+    pub fn operator(&self) -> &Token {
+        &self.operator
+    }
+
+    pub fn new(
+        operator: Token,
+        left: Box<dyn Expression>,
+        right: Box<dyn Expression>,
+    ) -> InfixExpression {
+        InfixExpression {
+            token: operator.clone(),
+            left,
+            right,
+            operator,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct LetStatement {
     token: Token,
