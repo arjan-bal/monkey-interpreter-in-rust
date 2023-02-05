@@ -16,7 +16,7 @@ fn main() {
         stdin().read_line(&mut input).unwrap();
         let lex = Lexer::new(&input);
         for token in lex {
-            println!("{:?}", token);
+            println!("{}", token);
         }
     }
 }

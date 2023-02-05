@@ -1,9 +1,12 @@
-use std::{any::Any, fmt::Debug};
+use std::{
+    any::Any,
+    fmt::{self, Display},
+};
 
 use crate::token::Token;
 use node_macro_derive::NodeMacro;
 
-pub trait Node: Debug {
+pub trait Node: Display {
     fn token(&self) -> Option<&Token>;
     fn as_any(&self) -> &dyn Any; // Required only for downcast during tests.
 }
@@ -12,7 +15,6 @@ pub trait Expression: Node {}
 
 pub trait Statement: Node {}
 
-#[derive(Debug)]
 pub struct Program {
     statements: Vec<Box<dyn Statement>>,
 }
@@ -27,6 +29,18 @@ impl Node for Program {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let res = self
+            .statements
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+        write!(f, "{}", res)
     }
 }
 
@@ -46,7 +60,7 @@ impl Program {
     }
 }
 
-#[derive(Debug, NodeMacro)]
+#[derive(NodeMacro)]
 pub struct Identifier {
     token: Token,
     value: String,
@@ -69,10 +83,22 @@ impl Identifier {
 
 impl Expression for Identifier {}
 
-#[derive(Debug, NodeMacro)]
+impl Display for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(NodeMacro)]
 pub struct IntegerLiteral {
     token: Token,
     value: i64,
+}
+
+impl Display for IntegerLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
 }
 
 impl IntegerLiteral {
@@ -81,7 +107,7 @@ impl IntegerLiteral {
             x
         } else {
             panic!(
-                "Trying to create an IntegerLiteral with non int token: {:?}",
+                "Trying to create an IntegerLiteral with non int token: {}",
                 token
             );
         };
@@ -95,13 +121,19 @@ impl IntegerLiteral {
 
 impl Expression for IntegerLiteral {}
 
-#[derive(Debug, NodeMacro)]
+#[derive(NodeMacro)]
 pub struct PrefixExpression {
     token: Token,
     right: Box<dyn Expression>,
 }
 
 impl Expression for PrefixExpression {}
+
+impl Display for PrefixExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}{})", self.token, self.right)
+    }
+}
 
 impl PrefixExpression {
     pub fn right(&self) -> &Box<dyn Expression> {
@@ -113,7 +145,7 @@ impl PrefixExpression {
     }
 }
 
-#[derive(Debug, NodeMacro)]
+#[derive(NodeMacro)]
 pub struct InfixExpression {
     token: Token,
     left: Box<dyn Expression>,
@@ -122,6 +154,12 @@ pub struct InfixExpression {
 }
 
 impl Expression for InfixExpression {}
+
+impl Display for InfixExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({} {} {})", self.left, self.operator(), self.right)
+    }
+}
 
 impl InfixExpression {
     pub fn left(&self) -> &Box<dyn Expression> {
@@ -150,11 +188,16 @@ impl InfixExpression {
     }
 }
 
-#[derive(Debug)]
 pub struct LetStatement {
     token: Token,
     name: Identifier,
     // value: Box<dyn Expression>,
+}
+
+impl Display for LetStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} = TODO", self.token, self.name)
+    }
 }
 
 impl Statement for LetStatement {}
@@ -178,7 +221,7 @@ impl LetStatement {
         let name = match &identifier {
             Token::Ident(name) => name.clone(),
             _ => panic!(
-                "LetStatement constructor called with non identifier token: {:?}",
+                "LetStatement constructor called with non identifier token: {}",
                 identifier
             ),
         };
@@ -192,10 +235,16 @@ impl LetStatement {
     }
 }
 
-#[derive(Debug, NodeMacro)]
+#[derive(NodeMacro)]
 pub struct ReturnStatement {
     token: Token,
     // return_value: Box<dyn Expression>,
+}
+
+impl Display for ReturnStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} TODO", self.token)
+    }
 }
 
 impl Statement for ReturnStatement {}
@@ -206,13 +255,19 @@ impl ReturnStatement {
     }
 }
 
-#[derive(Debug, NodeMacro)]
+#[derive(NodeMacro)]
 pub struct ExpressionStatement {
     token: Token, // the first token of the expression
     expression: Box<dyn Expression>,
 }
 
 impl Statement for ExpressionStatement {}
+
+impl Display for ExpressionStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.expression)
+    }
+}
 
 impl ExpressionStatement {
     pub fn expression(&self) -> &Box<dyn Expression> {

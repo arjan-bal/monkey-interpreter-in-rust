@@ -328,7 +328,7 @@ impl ParserInternal {
     fn expect_peek(&mut self, expected: Token) -> Result<(), ParseError> {
         if self.peek_token.as_ref() != Some(&expected) {
             return Err(ParseError(format!(
-                "Expected next token {:?}, found: {:?}",
+                "Expected next token {}, found: {:?}",
                 &expected, self.peek_token
             )));
         }
@@ -607,6 +607,39 @@ return 993322;
             test_integer_literal(infix_exp.left(), tc.left_value);
             test_integer_literal(infix_exp.right(), tc.right_value);
             assert_eq!(tc.operator, infix_exp.operator());
+        }
+    }
+
+    #[test]
+    fn test_operator_precedence_parsing() {
+        let tests = [
+            ("-a * b", "((-a) * b)"),
+            ("!-a", "(!(-a))"),
+            ("a + b + c", "((a + b) + c)"),
+            ("a + b - c", "((a + b) - c)"),
+            ("a * b * c", "((a * b) * c)"),
+            ("a * b / c", "((a * b) / c)"),
+            ("a + b / c", "(a + (b / c))"),
+            ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
+            ("3 + 4; -5 * 5", "(3 + 4)\n((-5) * 5)"),
+            ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
+            ("5 < 4 != 3 > 4", "((5 < 4) != (3 > 4))"),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ),
+        ];
+
+        for tc in tests.iter() {
+            let l = Lexer::new(tc.0);
+            let mut p = Parser::new(l);
+            let program = check_parse_errors(p.parse_program());
+            let actual = program.to_string();
+            assert_eq!(actual, tc.1);
         }
     }
 }
