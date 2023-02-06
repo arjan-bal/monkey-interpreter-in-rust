@@ -185,10 +185,7 @@ impl ParserInternal {
         let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
             let token = parser.cur_token.take().unwrap();
             parser.next_token();
-            let right_expression = match parser.parse_expression(Precedence::Prefix, ctx) {
-                Ok(exp) => exp,
-                Err(e) => return Err(e),
-            };
+            let right_expression = parser.parse_expression(Precedence::Prefix, ctx)?;
             let res: Box<dyn Expression> = Box::new(PrefixExpression::new(token, right_expression));
             Ok(res)
         };
@@ -200,10 +197,7 @@ impl ParserInternal {
             let precedence = parser.cur_precedence(ctx);
             let operator = parser.cur_token.take().unwrap();
             parser.next_token();
-            let right = match parser.parse_expression(precedence, ctx) {
-                Ok(exp) => exp,
-                Err(e) => return Err(e),
-            };
+            let right = parser.parse_expression(precedence, ctx)?;
             let res: Box<dyn Expression> = Box::new(InfixExpression::new(operator, left, right));
             Ok(res)
         };
@@ -242,10 +236,7 @@ impl ParserInternal {
                 )))
             }
         };
-        let mut left = match prefix_fn(self, ctx) {
-            Ok(exp) => exp,
-            Err(e) => return Err(e),
-        };
+        let mut left = prefix_fn(self, ctx)?;
         while self.peek_token != Some(Token::Semicolon) && precedence < self.peek_precedence(ctx) {
             let f = match ctx.infix_parse_fns.get(self.peek_token.as_ref().unwrap()) {
                 Some(f) => f,
