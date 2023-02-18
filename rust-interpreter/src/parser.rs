@@ -13,15 +13,11 @@ use crate::{
     token::Token,
 };
 
-type PrefixParseFn =
-    Box<dyn Fn(&mut ParserInternal, &ParsingContext) -> Result<Box<dyn Expression>, ParseError>>;
-type InfixParseFn = Box<
-    dyn Fn(
-        &mut ParserInternal,
-        Box<dyn Expression>,
-        &ParsingContext,
-    ) -> Result<Box<dyn Expression>, ParseError>,
->;
+type BoxExpression = Box<dyn Expression>;
+type ParseExpressionResult = Result<BoxExpression, ParseError>;
+type PrefixParseFn = Box<dyn Fn(&mut ParserInternal, &ParsingContext) -> ParseExpressionResult>;
+type InfixParseFn =
+    Box<dyn Fn(&mut ParserInternal, BoxExpression, &ParsingContext) -> ParseExpressionResult>;
 
 struct ParserInternal {
     lexer: Lexer,
@@ -166,7 +162,7 @@ impl ParserInternal {
     fn parse_identifier() -> PrefixParseFn {
         let f = |parser: &mut ParserInternal, _: &ParsingContext| {
             let ident = parser.cur_token.as_ref().unwrap().clone();
-            let res: Box<dyn Expression> = Box::new(Identifier::new(ident));
+            let res: BoxExpression = Box::new(Identifier::new(ident));
             Ok(res)
         };
         Box::new(f)
@@ -175,7 +171,7 @@ impl ParserInternal {
     fn parse_integer_literal() -> PrefixParseFn {
         let f = |parser: &mut ParserInternal, _: &ParsingContext| {
             let integer_literal = parser.cur_token.as_ref().unwrap().clone();
-            let res: Box<dyn Expression> = Box::new(IntegerLiteral::new(integer_literal));
+            let res: BoxExpression = Box::new(IntegerLiteral::new(integer_literal));
             Ok(res)
         };
         Box::new(f)
@@ -186,29 +182,28 @@ impl ParserInternal {
             let token = parser.cur_token.take().unwrap();
             parser.next_token();
             let right_expression = parser.parse_expression(Precedence::Prefix, ctx)?;
-            let res: Box<dyn Expression> = Box::new(PrefixExpression::new(token, right_expression));
+            let res: BoxExpression = Box::new(PrefixExpression::new(token, right_expression));
             Ok(res)
         };
         Box::new(f)
     }
 
     fn parse_infix_expressions() -> InfixParseFn {
-        let f = |parser: &mut ParserInternal, left: Box<dyn Expression>, ctx: &ParsingContext| {
+        let f = |parser: &mut ParserInternal, left: BoxExpression, ctx: &ParsingContext| {
             let precedence = parser.cur_precedence(ctx);
             let operator = parser.cur_token.take().unwrap();
             parser.next_token();
             let right = parser.parse_expression(precedence, ctx)?;
-            let res: Box<dyn Expression> = Box::new(InfixExpression::new(operator, left, right));
+            let res: BoxExpression = Box::new(InfixExpression::new(operator, left, right));
             Ok(res)
         };
         Box::new(f)
     }
 
     fn token_precedence(token: &Token, ctx: &ParsingContext) -> Precedence {
-        match ctx.precedence_map.get(token) {
-            Some(p) => p.clone(),
-            None => Precedence::Lowest,
-        }
+        ctx.precedence_map
+            .get(token)
+            .map_or(Precedence::Lowest, |p| p.clone())
     }
 
     fn cur_precedence(&self, ctx: &ParsingContext) -> Precedence {
@@ -223,19 +218,14 @@ impl ParserInternal {
         &mut self,
         precedence: Precedence,
         ctx: &ParsingContext,
-    ) -> Result<Box<dyn Expression>, ParseError> {
-        let prefix_fn = match ctx
+    ) -> ParseExpressionResult {
+        let prefix_fn = ctx
             .prefix_parse_fns
             .get(&self.cur_token.as_ref().unwrap().get_representative_token())
-        {
-            Some(f) => f,
-            None => {
-                return Err(ParseError(format!(
-                    "prefix function not found for token: {:?}",
-                    self.cur_token
-                )))
-            }
-        };
+            .ok_or(ParseError(format!(
+                "prefix function not found for token: {:?}",
+                self.cur_token
+            )))?;
         let mut left = prefix_fn(self, ctx)?;
         while self.peek_token != Some(Token::Semicolon) && precedence < self.peek_precedence(ctx) {
             let f = match ctx.infix_parse_fns.get(self.peek_token.as_ref().unwrap()) {
@@ -243,11 +233,7 @@ impl ParserInternal {
                 None => return Ok(left),
             };
             self.next_token();
-            let res = f(self, left, ctx);
-            left = match res {
-                Ok(exp) => exp,
-                Err(_) => return res,
-            }
+            left = f(self, left, ctx)?;
         }
         Ok(left)
     }
@@ -256,14 +242,13 @@ impl ParserInternal {
         &mut self,
         ctx: &ParsingContext,
     ) -> Result<Box<dyn Statement>, ParseError> {
-        let first_token = match self.cur_token.as_ref() {
-            Some(t) => t.clone(),
-            None => {
-                return Err(ParseError(format!(
-                    "Found empty cur token while parsing expression"
-                )))
-            }
-        };
+        let first_token = self
+            .cur_token
+            .as_ref()
+            .ok_or(ParseError(format!(
+                "Found empty cur token while parsing expression"
+            )))?
+            .clone();
         let exp = self.parse_expression(Precedence::Lowest, ctx)?;
         if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
@@ -304,15 +289,10 @@ impl ParserInternal {
     }
 
     fn get_ident_token(&mut self) -> Result<Token, ParseError> {
-        let ident_token = match self.cur_token {
-            Some(Token::Ident(_)) => self.cur_token.take().unwrap(),
-            _ => {
-                return Err(ParseError(format!(
-                    "Expected an identifier token, but found: {:?}",
-                    self.cur_token.as_ref()
-                )))
-            }
-        };
+        let ident_token = self.cur_token.take().ok_or(ParseError(format!(
+            "Expected an identifier token, but found: {:?}",
+            self.cur_token.as_ref()
+        )))?;
         Ok(ident_token)
     }
 
@@ -365,7 +345,7 @@ mod tests {
         token::Token,
     };
 
-    use super::ParseErrors;
+    use super::{ParseErrors, BoxExpression};
 
     fn check_parse_errors(res: Result<Program, ParseErrors>) -> Program {
         assert!(
@@ -464,7 +444,7 @@ return 993322;
         assert_eq!(expression.value(), "foobar");
     }
 
-    fn test_integer_literal(expression: &Box<dyn Expression>, value: i64) {
+    fn test_integer_literal(expression: &BoxExpression, value: i64) {
         let int_literal = expression
             .as_any()
             .downcast_ref::<IntegerLiteral>()
