@@ -122,6 +122,35 @@ impl IntegerLiteral {
 impl Expression for IntegerLiteral {}
 
 #[derive(NodeMacro)]
+pub struct Boolean {
+    token: Token,
+    value: bool,
+}
+
+impl Display for Boolean {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+impl Boolean {
+    pub fn new(token: Token) -> Boolean {
+        let value = match token {
+            Token::True => true,
+            Token::False => false,
+            _ => panic!("Trying to create Boolean from non bool token {}", token),
+        };
+        Boolean { token, value }
+    }
+
+    pub fn value(&self) -> bool {
+        self.value
+    }
+}
+
+impl Expression for Boolean {}
+
+#[derive(NodeMacro)]
 pub struct PrefixExpression {
     token: Token,
     right: Box<dyn Expression>,

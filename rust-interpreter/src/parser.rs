@@ -6,8 +6,8 @@ use std::{
 
 use crate::{
     ast::{
-        Expression, ExpressionStatement, Identifier, InfixExpression, IntegerLiteral, LetStatement,
-        PrefixExpression, Program, ReturnStatement, Statement,
+        Boolean, Expression, ExpressionStatement, Identifier, InfixExpression, IntegerLiteral,
+        LetStatement, PrefixExpression, Program, ReturnStatement, Statement,
     },
     lexer::Lexer,
     token::Token,
@@ -128,6 +128,8 @@ impl ParserInternal {
                 Token::Ident(String::from("")),
             ),
             (ParserInternal::parse_integer_literal(), Token::Int(0)),
+            (ParserInternal::parse_boolean_literal(), Token::True),
+            (ParserInternal::parse_boolean_literal(), Token::False),
             (
                 ParserInternal::parse_prefix_operator_expressions(),
                 Token::Bang,
@@ -172,6 +174,15 @@ impl ParserInternal {
         let f = |parser: &mut ParserInternal, _: &ParsingContext| {
             let integer_literal = parser.cur_token.as_ref().unwrap().clone();
             let res: BoxExpression = Box::new(IntegerLiteral::new(integer_literal));
+            Ok(res)
+        };
+        Box::new(f)
+    }
+
+    fn parse_boolean_literal() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
+            let boolean_literal = parser.cur_token.as_ref().unwrap().clone();
+            let res: BoxExpression = Box::new(Boolean::new(boolean_literal));
             Ok(res)
         };
         Box::new(f)
@@ -337,7 +348,7 @@ impl ParserInternal {
 mod tests {
     use crate::{
         ast::{
-            Expression, ExpressionStatement, Identifier, InfixExpression, IntegerLiteral,
+            Boolean, ExpressionStatement, Identifier, InfixExpression, IntegerLiteral,
             LetStatement, Node, PrefixExpression, Program, ReturnStatement, Statement,
         },
         lexer::Lexer,
@@ -345,7 +356,7 @@ mod tests {
         token::Token,
     };
 
-    use super::{ParseErrors, BoxExpression};
+    use super::{BoxExpression, ParseErrors};
 
     fn check_parse_errors(res: Result<Program, ParseErrors>) -> Program {
         assert!(
@@ -603,6 +614,10 @@ return 993322;
                 "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             ),
+            ("true", "true"),
+            ("false", "false"),
+            ("3 > 5 == false", "((3 > 5) == false)"),
+            ("3 < 5 == true", "((3 < 5) == true)"),
         ];
 
         for tc in tests.iter() {
@@ -611,6 +626,26 @@ return 993322;
             let program = check_parse_errors(p.parse_program());
             let actual = program.to_string();
             assert_eq!(actual, tc.1);
+        }
+    }
+
+    #[test]
+    fn test_boolean_expression() {
+        let tests = [("true;", true), ("false;", false)];
+
+        for tc in tests.iter() {
+            let l = Lexer::new(tc.0);
+            let mut p = Parser::new(l);
+            let program = check_parse_errors(p.parse_program());
+            let statements = program.statements();
+            assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+            let expression_statement = check_expression_statement(&statements[0]);
+            let boolean_exp = expression_statement
+                .expression()
+                .as_any()
+                .downcast_ref::<Boolean>()
+                .expect("expression is not a boolean expression");
+            assert_eq!(boolean_exp.value(), tc.1);
         }
     }
 }
