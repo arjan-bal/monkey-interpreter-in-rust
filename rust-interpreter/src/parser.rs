@@ -138,6 +138,7 @@ impl ParserInternal {
                 ParserInternal::parse_prefix_operator_expressions(),
                 Token::Minus,
             ),
+            (ParserInternal::parse_grouped_expression(), Token::LParen),
         ]);
         while !prefix_fns.is_empty() {
             let (func, token) = prefix_fns.pop().unwrap();
@@ -195,6 +196,19 @@ impl ParserInternal {
             let right_expression = parser.parse_expression(Precedence::Prefix, ctx)?;
             let res: BoxExpression = Box::new(PrefixExpression::new(token, right_expression));
             Ok(res)
+        };
+        Box::new(f)
+    }
+
+    fn parse_grouped_expression() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
+            parser.next_token();
+            let expression = parser.parse_expression(Precedence::Lowest, ctx)?;
+            if parser.peek_token != Some(Token::RParen) {
+                return Err(ParseError("Unmatched right ) in expression".to_owned()));
+            }
+            parser.next_token();
+            Ok(expression)
         };
         Box::new(f)
     }
@@ -618,6 +632,11 @@ return 993322;
             ("false", "false"),
             ("3 > 5 == false", "((3 > 5) == false)"),
             ("3 < 5 == true", "((3 < 5) == true)"),
+            ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            ("-(5 + 5)", "(-(5 + 5))"),
+            ("!(true == true)", "(!(true == true))"),
         ];
 
         for tc in tests.iter() {
