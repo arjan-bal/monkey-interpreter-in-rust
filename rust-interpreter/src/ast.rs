@@ -217,6 +217,86 @@ impl InfixExpression {
     }
 }
 
+#[derive(NodeMacro)]
+pub struct BlockStatement {
+    token: Token,
+    statements: Vec<Box<dyn Statement>>,
+}
+
+impl Display for BlockStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self
+            .statements
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+        write!(f, "{}", s)
+    }
+}
+
+impl BlockStatement {
+    pub fn statements(&self) -> &Vec<Box<dyn Statement>> {
+        &self.statements
+    }
+
+    pub fn new(token: Token, statements: Vec<Box<dyn Statement>>) -> BlockStatement {
+        BlockStatement { token, statements }
+    }
+}
+
+#[derive(NodeMacro)]
+pub struct IfExpression {
+    token: Token,
+    condition: Box<dyn Expression>,
+    consequence: BlockStatement,
+    alternate: Option<BlockStatement>,
+}
+
+impl Display for IfExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = format!(
+            "if ({})\n{}{}",
+            self.condition,
+            self.consequence,
+            self.alternate
+                .as_ref()
+                .map_or("".to_owned(), |a| format!("\n{}", a))
+        );
+        write!(f, "{}", s)
+    }
+}
+
+impl Expression for IfExpression {}
+
+impl IfExpression {
+    pub fn condition(&self) -> &Box<dyn Expression> {
+        &self.condition
+    }
+
+    pub fn consequence(&self) -> &BlockStatement {
+        &self.consequence
+    }
+
+    pub fn alternate(&self) -> &Option<BlockStatement> {
+        &self.alternate
+    }
+
+    pub fn new(
+        token: Token,
+        condition: Box<dyn Expression>,
+        consequence: BlockStatement,
+        alternate: Option<BlockStatement>,
+    ) -> IfExpression {
+        IfExpression {
+            token,
+            condition,
+            consequence,
+            alternate,
+        }
+    }
+}
+
 pub struct LetStatement {
     token: Token,
     name: Identifier,

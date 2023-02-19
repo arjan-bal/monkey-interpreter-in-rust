@@ -6,8 +6,9 @@ use std::{
 
 use crate::{
     ast::{
-        Boolean, Expression, ExpressionStatement, Identifier, InfixExpression, IntegerLiteral,
-        LetStatement, PrefixExpression, Program, ReturnStatement, Statement,
+        BlockStatement, Boolean, Expression, ExpressionStatement, Identifier, IfExpression,
+        InfixExpression, IntegerLiteral, LetStatement, PrefixExpression, Program, ReturnStatement,
+        Statement,
     },
     lexer::Lexer,
     token::Token,
@@ -139,6 +140,7 @@ impl ParserInternal {
                 Token::Minus,
             ),
             (ParserInternal::parse_grouped_expression(), Token::LParen),
+            (ParserInternal::parse_if_expression(), Token::If),
         ]);
         while !prefix_fns.is_empty() {
             let (func, token) = prefix_fns.pop().unwrap();
@@ -204,10 +206,31 @@ impl ParserInternal {
         let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
             parser.next_token();
             let expression = parser.parse_expression(Precedence::Lowest, ctx)?;
-            if parser.peek_token != Some(Token::RParen) {
-                return Err(ParseError("Unmatched right ) in expression".to_owned()));
-            }
+            parser.expect_peek(Token::RParen)?;
+            Ok(expression)
+        };
+        Box::new(f)
+    }
+
+    fn parse_if_expression() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
+            let token = parser.cur_token.take().unwrap();
+            parser.expect_peek(Token::LParen)?;
             parser.next_token();
+            let condition = parser.parse_expression(Precedence::Lowest, ctx)?;
+            parser.expect_peek(Token::RParen)?;
+            parser.expect_peek(Token::LBrace)?;
+            let consequence = parser.parse_block_statement(ctx)?;
+            let mut alternate = None;
+
+            if parser.peek_token == Some(Token::Else) {
+                parser.next_token();
+                parser.expect_peek(Token::LBrace)?;
+                alternate = Some(parser.parse_block_statement(ctx)?);
+            }
+
+            let expression: BoxExpression =
+                Box::new(IfExpression::new(token, condition, consequence, alternate));
             Ok(expression)
         };
         Box::new(f)
@@ -332,6 +355,21 @@ impl ParserInternal {
         Ok(())
     }
 
+    fn parse_block_statement(
+        &mut self,
+        ctx: &ParsingContext,
+    ) -> Result<BlockStatement, ParseError> {
+        let mut statements = Vec::new();
+        let token = self.cur_token.take().unwrap();
+        self.next_token();
+        while self.cur_token != Some(Token::RBrace) && self.cur_token != Some(Token::EOF) {
+            let statement = self.parse_statement(ctx)?;
+            statements.push(statement);
+            self.next_token();
+        }
+        Ok(BlockStatement::new(token, statements))
+    }
+
     fn parse_statement(&mut self, ctx: &ParsingContext) -> Result<Box<dyn Statement>, ParseError> {
         match (self.cur_token.as_ref(), self.peek_token.as_ref()) {
             (Some(&Token::Let), _) => self.parse_let_statement(),
@@ -362,8 +400,9 @@ impl ParserInternal {
 mod tests {
     use crate::{
         ast::{
-            Boolean, ExpressionStatement, Identifier, InfixExpression, IntegerLiteral,
-            LetStatement, Node, PrefixExpression, Program, ReturnStatement, Statement,
+            Boolean, Expression, ExpressionStatement, Identifier, IfExpression, InfixExpression,
+            IntegerLiteral, LetStatement, Node, PrefixExpression, Program, ReturnStatement,
+            Statement,
         },
         lexer::Lexer,
         parser::Parser,
@@ -457,16 +496,16 @@ return 993322;
         let statements = program.statements();
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
         let expression_statement = check_expression_statement(&statements[0]);
-        let expression = expression_statement
-            .expression()
+        test_identifier(expression_statement.expression(), "foobar".to_owned());
+    }
+
+    fn test_identifier(expression: &Box<dyn Expression>, name: String) {
+        let identifier = expression
             .as_any()
             .downcast_ref::<Identifier>()
             .expect("expression is not an identifier");
-        assert_eq!(
-            expression.token().unwrap(),
-            &Token::Ident("foobar".to_owned())
-        );
-        assert_eq!(expression.value(), "foobar");
+        assert_eq!(identifier.token().unwrap(), &Token::Ident(name.clone()));
+        assert_eq!(identifier.value(), name.as_str());
     }
 
     fn test_integer_literal(expression: &BoxExpression, value: i64) {
@@ -530,7 +569,7 @@ return 993322;
     }
 
     #[test]
-    fn test_infix_expression() {
+    fn test_infix_expressions() {
         struct TestCase<'a> {
             input: &'a str,
             operator: &'a Token,
@@ -595,15 +634,28 @@ return 993322;
             let statements = program.statements();
             assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
             let expression_statement = check_expression_statement(&statements[0]);
-            let infix_exp = expression_statement
-                .expression()
-                .as_any()
-                .downcast_ref::<InfixExpression>()
-                .expect("expression is not a infix expression");
-            test_integer_literal(infix_exp.left(), tc.left_value);
-            test_integer_literal(infix_exp.right(), tc.right_value);
-            assert_eq!(tc.operator, infix_exp.operator());
+            test_infix_expression(
+                expression_statement.expression(),
+                tc.left_value,
+                tc.right_value,
+                tc.operator,
+            )
         }
+    }
+
+    fn test_infix_expression(
+        expression: &Box<dyn Expression>,
+        left_value: i64,
+        right_value: i64,
+        operator: &Token,
+    ) {
+        let infix_exp = expression
+            .as_any()
+            .downcast_ref::<InfixExpression>()
+            .expect("expression is not a infix expression");
+        test_integer_literal(infix_exp.left(), left_value);
+        test_integer_literal(infix_exp.right(), right_value);
+        assert_eq!(operator, infix_exp.operator());
     }
 
     #[test]
@@ -666,5 +718,55 @@ return 993322;
                 .expect("expression is not a boolean expression");
             assert_eq!(boolean_exp.value(), tc.1);
         }
+    }
+
+    #[test]
+    fn test_if_expression() {
+        let input = "if (3 < 10) { x }";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+        let expression_statement = check_expression_statement(&statements[0]);
+        let if_expression = expression_statement
+            .expression()
+            .as_any()
+            .downcast_ref::<IfExpression>()
+            .expect("expression is not an if expression");
+        test_infix_expression(if_expression.condition(), 3, 10, &Token::LT);
+        assert_eq!(if_expression.consequence().statements().len(), 1);
+        let expression_statement =
+            check_expression_statement(&if_expression.consequence().statements()[0]);
+        test_identifier(expression_statement.expression(), "x".to_owned());
+        assert!(if_expression.alternate().is_none());
+    }
+
+    #[test]
+    fn test_if_else_expression() {
+        let input = "if (3 < 10) { x } else { y }";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+        let expression_statement = check_expression_statement(&statements[0]);
+        let if_expression = expression_statement
+            .expression()
+            .as_any()
+            .downcast_ref::<IfExpression>()
+            .expect("expression is not an if expression");
+        test_infix_expression(if_expression.condition(), 3, 10, &Token::LT);
+
+        assert_eq!(if_expression.consequence().statements().len(), 1);
+        let expression_statement =
+            check_expression_statement(&if_expression.consequence().statements()[0]);
+        test_identifier(expression_statement.expression(), "x".to_owned());
+
+        assert!(if_expression.alternate().is_some());
+        let alternate_block = if_expression.alternate().as_ref().unwrap();
+        assert_eq!(alternate_block.statements().len(), 1);
+        let expression_statement = check_expression_statement(&alternate_block.statements()[0]);
+        test_identifier(expression_statement.expression(), "y".to_owned());
     }
 }
