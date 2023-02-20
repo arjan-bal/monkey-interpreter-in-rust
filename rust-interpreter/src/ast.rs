@@ -75,7 +75,7 @@ impl Identifier {
         let value = if let Token::Ident(s) = &token {
             s.clone()
         } else {
-            panic!("Trying to create an Identifier with non-ident token");
+            panic!("Trying to create an Identifier with non-ident token {}", token);
         };
         Identifier { token, value }
     }
@@ -229,7 +229,7 @@ impl Display for BlockStatement {
             .statements
             .iter()
             .map(|s| s.to_string())
-            .collect::<Vec<String>>()
+            .collect::<Vec<_>>()
             .join("\n");
         write!(f, "{}", s)
     }
@@ -242,6 +242,49 @@ impl BlockStatement {
 
     pub fn new(token: Token, statements: Vec<Box<dyn Statement>>) -> BlockStatement {
         BlockStatement { token, statements }
+    }
+}
+
+#[derive(NodeMacro)]
+pub struct FunctionLiteral {
+    token: Token,
+    parameters: Vec<Identifier>,
+    body: BlockStatement,
+}
+
+impl Display for FunctionLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} ({}) {}",
+            self.token().unwrap(),
+            self.parameters
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+            self.body
+        )
+    }
+}
+
+impl Expression for FunctionLiteral {}
+
+impl FunctionLiteral {
+    pub fn new(token: Token, parameters: Vec<Identifier>, body: BlockStatement) -> FunctionLiteral {
+        FunctionLiteral {
+            token,
+            parameters,
+            body,
+        }
+    }
+
+    pub fn body(&self) -> &BlockStatement {
+        &self.body
+    }
+
+    pub fn parameters(&self) -> &Vec<Identifier> {
+        &self.parameters
     }
 }
 
