@@ -55,14 +55,14 @@ impl Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut disp = String::new();
+        let mut s = String::new();
         let res = match self {
             Token::Illegal => "Illegal",
             Token::EOF => "EOF",
             Token::Ident(x) => x,
             Token::Int(x) => {
-                disp = x.to_string();
-                disp.as_str()
+                s = x.to_string();
+                s.as_str()
             }
             Token::True => "true",
             Token::False => "false",

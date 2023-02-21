@@ -75,7 +75,10 @@ impl Identifier {
         let value = if let Token::Ident(s) = &token {
             s.clone()
         } else {
-            panic!("Trying to create an Identifier with non-ident token {}", token);
+            panic!(
+                "Trying to create an Identifier with non-ident token {}",
+                token
+            );
         };
         Identifier { token, value }
     }
@@ -149,6 +152,30 @@ impl Boolean {
 }
 
 impl Expression for Boolean {}
+
+#[derive(NodeMacro)]
+pub struct CallExpression {
+    pub token: Token,
+    pub function: Box<dyn Expression>,
+    pub arguments: Vec<Box<dyn Expression>>,
+}
+
+impl Display for CallExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.function,
+            self.arguments
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+impl Expression for CallExpression {}
 
 #[derive(NodeMacro)]
 pub struct PrefixExpression {
@@ -341,14 +368,14 @@ impl IfExpression {
 }
 
 pub struct LetStatement {
-    token: Token,
-    name: Identifier,
-    // value: Box<dyn Expression>,
+    pub token: Token,
+    pub name: Identifier,
+    pub value: Box<dyn Expression>,
 }
 
 impl Display for LetStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {} = TODO", self.token, self.name)
+        write!(f, "{} {} = {}", self.token, self.name, self.value)
     }
 }
 
@@ -365,11 +392,7 @@ impl Node for LetStatement {
 }
 
 impl LetStatement {
-    pub fn name(&self) -> &Identifier {
-        &self.name
-    }
-
-    pub fn new(token: Token, identifier: Token) -> LetStatement {
+    pub fn new(token: Token, identifier: Token, value: Box<dyn Expression>) -> LetStatement {
         let name = match &identifier {
             Token::Ident(name) => name.clone(),
             _ => panic!(
@@ -383,29 +406,24 @@ impl LetStatement {
                 token: identifier,
                 value: name,
             },
+            value,
         }
     }
 }
 
 #[derive(NodeMacro)]
 pub struct ReturnStatement {
-    token: Token,
-    // return_value: Box<dyn Expression>,
+    pub token: Token,
+    pub return_value: Box<dyn Expression>,
 }
 
 impl Display for ReturnStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} TODO", self.token)
+        write!(f, "{} {}", self.token, self.return_value)
     }
 }
 
 impl Statement for ReturnStatement {}
-
-impl ReturnStatement {
-    pub fn new(token: Token) -> ReturnStatement {
-        ReturnStatement { token }
-    }
-}
 
 #[derive(NodeMacro)]
 pub struct ExpressionStatement {

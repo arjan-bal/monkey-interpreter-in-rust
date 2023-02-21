@@ -6,9 +6,9 @@ use std::{
 
 use crate::{
     ast::{
-        BlockStatement, Boolean, Expression, ExpressionStatement, FunctionLiteral, Identifier,
-        IfExpression, InfixExpression, IntegerLiteral, LetStatement, PrefixExpression, Program,
-        ReturnStatement, Statement,
+        BlockStatement, Boolean, CallExpression, Expression, ExpressionStatement, FunctionLiteral,
+        Identifier, IfExpression, InfixExpression, IntegerLiteral, LetStatement, PrefixExpression,
+        Program, ReturnStatement, Statement,
     },
     lexer::Lexer,
     token::Token,
@@ -72,6 +72,7 @@ impl ParsingContext {
             (Token::Minus, Precedence::Sum),
             (Token::Slash, Precedence::Product),
             (Token::Asterisk, Precedence::Product),
+            (Token::LParen, Precedence::Call),
         ]);
         ParsingContext {
             prefix_parse_fns: HashMap::new(),
@@ -104,7 +105,7 @@ enum Precedence {
 }
 
 #[derive(Debug)]
-pub struct ParseErrors(Vec<ParseError>);
+pub struct ParseErrors(pub Vec<ParseError>);
 
 impl Error for ParseErrors {}
 
@@ -157,6 +158,7 @@ impl ParserInternal {
             (ParserInternal::parse_infix_expressions(), Token::NotEq),
             (ParserInternal::parse_infix_expressions(), Token::LT),
             (ParserInternal::parse_infix_expressions(), Token::GT),
+            (ParserInternal::parse_call_expression(), Token::LParen),
         ]);
         while !infix_fns.is_empty() {
             let (func, token) = infix_fns.pop().unwrap();
@@ -262,6 +264,41 @@ impl ParserInternal {
         Box::new(f)
     }
 
+    fn parse_call_expression() -> InfixParseFn {
+        let f = |parser: &mut ParserInternal, left: BoxExpression, ctx: &ParsingContext| {
+            let token = parser.cur_token.take().unwrap();
+            parser.expect_peek(Token::LParen);
+            let arguments = parser.parse_arguments(ctx)?;
+            let res: BoxExpression = Box::new(CallExpression {
+                token,
+                function: left,
+                arguments,
+            });
+            Ok(res)
+        };
+        Box::new(f)
+    }
+
+    fn parse_arguments(&mut self, ctx: &ParsingContext) -> Result<Vec<BoxExpression>, ParseError> {
+        self.next_token(); // Skip the LParen.
+        let mut arguments = Vec::new();
+        if self.cur_token == Some(Token::RParen) {
+            return Ok(arguments);
+        }
+
+        // Remove at least one parameter.
+        arguments.push(self.parse_expression(Precedence::Lowest, ctx)?);
+
+        while self.peek_token == Some(Token::Comma) {
+            self.next_token();
+            self.next_token();
+            arguments.push(self.parse_expression(Precedence::Lowest, ctx)?);
+        }
+
+        self.expect_peek(Token::RParen)?;
+        Ok(arguments)
+    }
+
     fn token_precedence(token: &Token, ctx: &ParsingContext) -> Precedence {
         ctx.precedence_map
             .get(token)
@@ -323,31 +360,38 @@ impl ParserInternal {
         self.peek_token = self.lexer.next();
     }
 
-    fn parse_let_statement(&mut self) -> Result<Box<dyn Statement>, ParseError> {
+    fn parse_let_statement(
+        &mut self,
+        ctx: &ParsingContext,
+    ) -> Result<Box<dyn Statement>, ParseError> {
         let let_token = self.cur_token.take().unwrap();
         self.next_token();
         let ident_token = self.get_ident_token()?;
         self.expect_peek(Token::Assign)?;
         self.next_token(); // cur is not assign.
-        self.next_token(); // skip assign.
-
-        // Remove tokens till we see a semicolon.
-        while self.cur_token != Some(Token::Semicolon) {
+        let value = self.parse_expression(Precedence::Lowest, ctx)?;
+        // Don't remove the semicolon. It's removed in parse_program().
+        if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
         }
-        // Don't remove the semicolon. It's removed in parse_program().
-        Ok(Box::new(LetStatement::new(let_token, ident_token)))
+        Ok(Box::new(LetStatement::new(let_token, ident_token, value)))
     }
 
-    fn parse_return_statement(&mut self) -> Result<Box<dyn Statement>, ParseError> {
-        let return_token = self.cur_token.take().unwrap();
+    fn parse_return_statement(
+        &mut self,
+        ctx: &ParsingContext,
+    ) -> Result<Box<dyn Statement>, ParseError> {
+        let token = self.cur_token.take().unwrap();
         self.next_token();
-        // Remove tokens till we see a semicolon.
-        while self.cur_token != Some(Token::Semicolon) {
+        let return_value = self.parse_expression(Precedence::Lowest, ctx)?;
+        // Don't remove the semicolon. It's removed in parse_program().
+        if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
         }
-        // Don't remove the semicolon. It's removed in parse_program().
-        Ok(Box::new(ReturnStatement::new(return_token)))
+        Ok(Box::new(ReturnStatement {
+            token,
+            return_value,
+        }))
     }
 
     fn get_ident_token(&mut self) -> Result<Token, ParseError> {
@@ -406,8 +450,8 @@ impl ParserInternal {
 
     fn parse_statement(&mut self, ctx: &ParsingContext) -> Result<Box<dyn Statement>, ParseError> {
         match (self.cur_token.as_ref(), self.peek_token.as_ref()) {
-            (Some(&Token::Let), _) => self.parse_let_statement(),
-            (Some(&Token::Return), _) => self.parse_return_statement(),
+            (Some(&Token::Let), _) => self.parse_let_statement(ctx),
+            (Some(&Token::Return), _) => self.parse_return_statement(ctx),
             _ => self.parse_expression_statement(ctx),
         }
     }
@@ -434,9 +478,9 @@ impl ParserInternal {
 mod tests {
     use crate::{
         ast::{
-            Boolean, Expression, ExpressionStatement, FunctionLiteral, Identifier, IfExpression,
-            InfixExpression, IntegerLiteral, LetStatement, Node, PrefixExpression, Program,
-            ReturnStatement, Statement,
+            Boolean, CallExpression, Expression, ExpressionStatement, FunctionLiteral, Identifier,
+            IfExpression, InfixExpression, IntegerLiteral, LetStatement, Node, PrefixExpression,
+            Program, ReturnStatement, Statement,
         },
         lexer::Lexer,
         parser::Parser,
@@ -458,7 +502,7 @@ mod tests {
     fn test_let_statement() {
         let input = r#"
 let x = 5;
-let y = 10;
+let y = true;
 let foobar = 838383;
 "#;
         let l = Lexer::new(input);
@@ -468,6 +512,7 @@ let foobar = 838383;
         let statements = program.statements();
         assert_eq!(statements.len(), 3, "program doesn't contain 3 statements");
         let expected_identifiers = ["x", "y", "foobar"];
+        let expected_rhs = ["5", "true", "838383"];
 
         for (idx, statement) in statements.iter().enumerate() {
             let name = expected_identifiers[idx];
@@ -476,8 +521,8 @@ let foobar = 838383;
                 .as_any()
                 .downcast_ref::<LetStatement>()
                 .expect("Statement is not a LetStatement!");
-            assert_eq!(let_statement.name().value(), name);
-            let got_name = match let_statement.name().token().unwrap() {
+            assert_eq!(let_statement.name.value(), name);
+            let got_name = match let_statement.name.token().unwrap() {
                 Token::Ident(s) => s,
                 _ => panic!(
                     "Expected token inside let statement to be am Identifier, found: {:?}",
@@ -485,6 +530,7 @@ let foobar = 838383;
                 ),
             };
             assert_eq!(got_name, name);
+            assert_eq!(let_statement.value.to_string(), expected_rhs[idx]);
         }
     }
 
@@ -492,7 +538,7 @@ let foobar = 838383;
     fn test_return_statement() {
         let input = r#"
 return 5;
-return 10;
+return true;
 return 993322;
 "#;
         let l = Lexer::new(input);
@@ -501,13 +547,15 @@ return 993322;
         let program = check_parse_errors(p.parse_program());
         let statements = program.statements();
         assert_eq!(statements.len(), 3, "program doesn't contain 3 statements");
+        let expected_rhs = ["5", "true", "993322"];
 
-        for statement in statements.iter() {
+        for (idx, statement) in statements.iter().enumerate() {
             assert_eq!(statement.token().unwrap(), &Token::Return);
-            statement
+            let return_statement = statement
                 .as_any()
                 .downcast_ref::<ReturnStatement>()
                 .expect("Statement is not a ReturnStatement!");
+            assert_eq!(return_statement.return_value.to_string(), expected_rhs[idx]);
         }
     }
 
@@ -745,6 +793,15 @@ return 993322;
             ("2 / (5 + 5)", "(2 / (5 + 5))"),
             ("-(5 + 5)", "(-(5 + 5))"),
             ("!(true == true)", "(!(true == true))"),
+            ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
+            (
+                "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+                "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            ),
+            (
+                "add(a + b + c * d / f + g)",
+                "add((((a + b) + ((c * d) / f)) + g))",
+            ),
         ];
 
         for tc in tests.iter() {
@@ -876,6 +933,73 @@ return 993322;
 
             for (idx, val) in (&tc.1).into_iter().enumerate() {
                 test_identifier(&function_literal.parameters()[idx], val);
+            }
+        }
+    }
+
+    #[test]
+    pub fn test_parse_call_expression() {
+        let input = "add(1, 2 * 3, 4 + 5);";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements();
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+        let expression_statement = check_expression_statement(&statements[0]);
+        let call_expression = expression_statement
+            .expression()
+            .as_any()
+            .downcast_ref::<CallExpression>()
+            .expect("expression is not a call expression");
+        test_identifier_expression(&call_expression.function, "add");
+        assert_eq!(call_expression.arguments.len(), 3);
+        test_integer_literal(&call_expression.arguments[0], 1);
+        test_infix_expression(&call_expression.arguments[1], 2, 3, &Token::Asterisk);
+        test_infix_expression(&call_expression.arguments[2], 4, 5, &Token::Plus);
+    }
+
+    fn test_function_args_parsing() {
+        struct TestCase<'a> {
+            input: &'a str,
+            expected_args: Vec<&'a str>,
+            expected_ident: &'a str,
+        }
+
+        let tests = [
+            TestCase {
+                input: "add();",
+                expected_ident: "add",
+                expected_args: vec![],
+            },
+            TestCase {
+                input: "add(1);",
+                expected_ident: "add",
+                expected_args: vec!["1"],
+            },
+            TestCase {
+                input: "add(1, 2 * 3, 4 + 5);",
+                expected_ident: "add",
+                expected_args: vec!["1", "(2 * 3)", "(4 + 5)"],
+            },
+        ];
+
+        for tc in tests.iter() {
+            let input = tc.input;
+            let l = Lexer::new(input);
+            let mut p = Parser::new(l);
+            let program = check_parse_errors(p.parse_program());
+            let statements = program.statements();
+            assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+            let expression_statement = check_expression_statement(&statements[0]);
+            let call_expression = expression_statement
+                .expression()
+                .as_any()
+                .downcast_ref::<CallExpression>()
+                .expect("expression is not a call expression");
+            test_identifier_expression(&call_expression.function, tc.expected_ident);
+            assert_eq!(call_expression.arguments.len(), tc.expected_args.len());
+            for (idx, arg) in tc.expected_args.iter().enumerate() {
+                assert_eq!(arg, &call_expression.arguments[idx].to_string().as_str())
             }
         }
     }
