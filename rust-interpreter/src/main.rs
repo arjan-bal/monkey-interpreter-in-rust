@@ -9,6 +9,8 @@ mod ast;
 mod lexer;
 mod parser;
 mod token;
+mod object;
+mod evaluator;
 
 const GREETING_MESSAGE: &str = "Hello mrnugget! This is the Monkey programming language!\nFeel free to type in commands";
 const PROMPT: &str = ">>";

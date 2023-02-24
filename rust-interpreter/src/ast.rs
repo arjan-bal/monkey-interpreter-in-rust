@@ -5,6 +5,7 @@ use crate::token::Token;
 pub enum Node {
     Expression(Expression),
     Statement(Statement),
+    Program(Program),
 }
 
 pub enum Expression {
@@ -65,6 +66,7 @@ impl Display for Node {
         let res = match &self {
             Node::Expression(x) => x.to_string(),
             Node::Statement(x) => x.to_string(),
+            Node::Program(x) => x.to_string(),
         };
         f.write_str(res.as_str())
     }
@@ -85,6 +87,7 @@ impl Node {
         match &self {
             Node::Expression(e) => e.token(),
             Node::Statement(s) => s.token(),
+            Node::Program(p) => p.token(),
         }
     }
 }
