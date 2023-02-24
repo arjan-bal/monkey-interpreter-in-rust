@@ -6,15 +6,14 @@ use std::{
 
 use crate::{
     ast::{
-        BlockStatement, Boolean, CallExpression, Expression, ExpressionStatement, FunctionLiteral,
+        BlockStatement, Boolean, CallExpression, ExpressionStatement, FunctionLiteral,
         Identifier, IfExpression, InfixExpression, IntegerLiteral, LetStatement, PrefixExpression,
-        Program, ReturnStatement, Statement,
+        Program, ReturnStatement, Statement, BoxExpression,
     },
     lexer::Lexer,
     token::Token,
 };
 
-type BoxExpression = Box<dyn Expression>;
 type ParseExpressionResult = Result<BoxExpression, ParseError>;
 type PrefixParseFn = Box<dyn Fn(&mut ParserInternal, &ParsingContext) -> ParseExpressionResult>;
 type InfixParseFn =
@@ -199,7 +198,10 @@ impl ParserInternal {
             let token = parser.cur_token.take().unwrap();
             parser.next_token();
             let right_expression = parser.parse_expression(Precedence::Prefix, ctx)?;
-            let res: BoxExpression = Box::new(PrefixExpression::new(token, right_expression));
+            let res: BoxExpression = Box::new(PrefixExpression {
+                token,
+                right: right_expression,
+            });
             Ok(res)
         };
         Box::new(f)
@@ -232,8 +234,12 @@ impl ParserInternal {
                 alternate = Some(parser.parse_block_statement(ctx)?);
             }
 
-            let expression: BoxExpression =
-                Box::new(IfExpression::new(token, condition, consequence, alternate));
+            let expression: BoxExpression = Box::new(IfExpression {
+                token,
+                condition,
+                consequence,
+                alternate,
+            });
             Ok(expression)
         };
         Box::new(f)
@@ -246,7 +252,11 @@ impl ParserInternal {
             let parameters = parser.parse_parameters()?;
             parser.expect_peek(Token::LBrace)?;
             let body = parser.parse_block_statement(ctx)?;
-            let expression: BoxExpression = Box::new(FunctionLiteral::new(token, parameters, body));
+            let expression: BoxExpression = Box::new(FunctionLiteral {
+                token,
+                parameters,
+                body,
+            });
             Ok(expression)
         };
         Box::new(f)
@@ -267,7 +277,6 @@ impl ParserInternal {
     fn parse_call_expression() -> InfixParseFn {
         let f = |parser: &mut ParserInternal, left: BoxExpression, ctx: &ParsingContext| {
             let token = parser.cur_token.take().unwrap();
-            parser.expect_peek(Token::LParen);
             let arguments = parser.parse_arguments(ctx)?;
             let res: BoxExpression = Box::new(CallExpression {
                 token,
@@ -348,11 +357,14 @@ impl ParserInternal {
                 "Found empty cur token while parsing expression"
             )))?
             .clone();
-        let exp = self.parse_expression(Precedence::Lowest, ctx)?;
+        let expression = self.parse_expression(Precedence::Lowest, ctx)?;
         if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
         }
-        Ok(Box::new(ExpressionStatement::new(first_token, exp)))
+        Ok(Box::new(ExpressionStatement {
+            token: first_token,
+            expression,
+        }))
     }
 
     fn next_token(&mut self) {
@@ -425,7 +437,7 @@ impl ParserInternal {
             statements.push(statement);
             self.next_token();
         }
-        Ok(BlockStatement::new(token, statements))
+        Ok(BlockStatement { token, statements })
     }
 
     fn parse_parameters(&mut self) -> Result<Vec<Identifier>, ParseError> {
@@ -457,11 +469,13 @@ impl ParserInternal {
     }
 
     fn parse_program(&mut self, ctx: &ParsingContext) -> Result<Program, ParseErrors> {
-        let mut prog = Program::new();
+        let mut prog = Program {
+            statements: Vec::new(),
+        };
         let mut parse_errors = Vec::new();
         while self.cur_token != None && self.cur_token != Some(Token::EOF) {
             match self.parse_statement(ctx) {
-                Ok(s) => prog.add_statement(s),
+                Ok(s) => prog.statements.push(s),
                 Err(e) => parse_errors.push(e),
             }
             self.next_token();
@@ -509,7 +523,7 @@ let foobar = 838383;
         let mut p = Parser::new(l);
 
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 3, "program doesn't contain 3 statements");
         let expected_identifiers = ["x", "y", "foobar"];
         let expected_rhs = ["5", "true", "838383"];
@@ -521,7 +535,7 @@ let foobar = 838383;
                 .as_any()
                 .downcast_ref::<LetStatement>()
                 .expect("Statement is not a LetStatement!");
-            assert_eq!(let_statement.name.value(), name);
+            assert_eq!(let_statement.name.value, name);
             let got_name = match let_statement.name.token().unwrap() {
                 Token::Ident(s) => s,
                 _ => panic!(
@@ -545,7 +559,7 @@ return 993322;
         let mut p = Parser::new(l);
 
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 3, "program doesn't contain 3 statements");
         let expected_rhs = ["5", "true", "993322"];
 
@@ -575,10 +589,10 @@ return 993322;
         let mut p = Parser::new(l);
 
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
         let expression_statement = check_expression_statement(&statements[0]);
-        test_identifier_expression(expression_statement.expression(), "foobar");
+        test_identifier_expression(&expression_statement.expression, "foobar");
     }
 
     fn test_identifier_expression(expression: &Box<dyn Expression>, name: &str) {
@@ -594,7 +608,7 @@ return 993322;
             identifier.token().unwrap(),
             &Token::Ident(name.to_owned().clone())
         );
-        assert_eq!(identifier.value(), name);
+        assert_eq!(identifier.value, name);
     }
 
     fn test_integer_literal(expression: &BoxExpression, value: i64) {
@@ -603,7 +617,7 @@ return 993322;
             .downcast_ref::<IntegerLiteral>()
             .expect("expression is not an IntegerLiteral");
         assert_eq!(int_literal.token().unwrap(), &Token::Int(value));
-        assert_eq!(int_literal.value(), value);
+        assert_eq!(int_literal.value, value);
     }
 
     #[test]
@@ -613,11 +627,11 @@ return 993322;
         let mut p = Parser::new(l);
 
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
 
         let expression_statement = check_expression_statement(&statements[0]);
-        test_integer_literal(expression_statement.expression(), 5);
+        test_integer_literal(&expression_statement.expression, 5);
     }
 
     #[test]
@@ -644,16 +658,16 @@ return 993322;
             let l = Lexer::new(tc.input);
             let mut p = Parser::new(l);
             let program = check_parse_errors(p.parse_program());
-            let statements = program.statements();
+            let statements = program.statements;
             assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
             let expression_statement = check_expression_statement(&statements[0]);
             let prefix_exp = expression_statement
-                .expression()
+                .expression
                 .as_any()
                 .downcast_ref::<PrefixExpression>()
                 .expect("expression is not a prefix expression");
             assert_eq!(prefix_exp.token().unwrap(), tc.operator);
-            test_integer_literal(prefix_exp.right(), tc.integer_value);
+            test_integer_literal(&prefix_exp.right, tc.integer_value);
         }
     }
 
@@ -720,11 +734,11 @@ return 993322;
             let l = Lexer::new(tc.input);
             let mut p = Parser::new(l);
             let program = check_parse_errors(p.parse_program());
-            let statements = program.statements();
+            let statements = program.statements;
             assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
             let expression_statement = check_expression_statement(&statements[0]);
             test_infix_expression(
-                expression_statement.expression(),
+                &expression_statement.expression,
                 tc.left_value,
                 tc.right_value,
                 tc.operator,
@@ -742,9 +756,9 @@ return 993322;
             .as_any()
             .downcast_ref::<InfixExpression>()
             .expect("expression is not a infix expression");
-        test_integer_literal(infix_exp.left(), left_value);
-        test_integer_literal(infix_exp.right(), right_value);
-        assert_eq!(operator, infix_exp.operator());
+        test_integer_literal(&infix_exp.left, left_value);
+        test_integer_literal(&infix_exp.right, right_value);
+        assert_eq!(operator, &infix_exp.operator);
     }
 
     fn test_infix_expression_identifier(
@@ -757,9 +771,9 @@ return 993322;
             .as_any()
             .downcast_ref::<InfixExpression>()
             .expect("expression is not a infix expression");
-        test_identifier_expression(infix_exp.left(), left_value);
-        test_identifier_expression(infix_exp.right(), right_value);
-        assert_eq!(operator, infix_exp.operator());
+        test_identifier_expression(&infix_exp.left, left_value);
+        test_identifier_expression(&infix_exp.right, right_value);
+        assert_eq!(operator, &infix_exp.operator);
     }
 
     #[test]
@@ -821,15 +835,15 @@ return 993322;
             let l = Lexer::new(tc.0);
             let mut p = Parser::new(l);
             let program = check_parse_errors(p.parse_program());
-            let statements = program.statements();
+            let statements = program.statements;
             assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
             let expression_statement = check_expression_statement(&statements[0]);
             let boolean_exp = expression_statement
-                .expression()
+                .expression
                 .as_any()
                 .downcast_ref::<Boolean>()
                 .expect("expression is not a boolean expression");
-            assert_eq!(boolean_exp.value(), tc.1);
+            assert_eq!(boolean_exp.value, tc.1);
         }
     }
 
@@ -839,20 +853,20 @@ return 993322;
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
         let expression_statement = check_expression_statement(&statements[0]);
         let if_expression = expression_statement
-            .expression()
+            .expression
             .as_any()
             .downcast_ref::<IfExpression>()
             .expect("expression is not an if expression");
-        test_infix_expression(if_expression.condition(), 3, 10, &Token::LT);
-        assert_eq!(if_expression.consequence().statements().len(), 1);
+        test_infix_expression(&if_expression.condition, 3, 10, &Token::LT);
+        assert_eq!(if_expression.consequence.statements.len(), 1);
         let expression_statement =
-            check_expression_statement(&if_expression.consequence().statements()[0]);
-        test_identifier_expression(expression_statement.expression(), "x");
-        assert!(if_expression.alternate().is_none());
+            check_expression_statement(&if_expression.consequence.statements[0]);
+        test_identifier_expression(&expression_statement.expression, "x");
+        assert!(if_expression.alternate.is_none());
     }
 
     #[test]
@@ -861,26 +875,26 @@ return 993322;
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
         let expression_statement = check_expression_statement(&statements[0]);
         let if_expression = expression_statement
-            .expression()
+            .expression
             .as_any()
             .downcast_ref::<IfExpression>()
             .expect("expression is not an if expression");
-        test_infix_expression_identifier(if_expression.condition(), "x", "y", &Token::LT);
+        test_infix_expression_identifier(&if_expression.condition, "x", "y", &Token::LT);
 
-        assert_eq!(if_expression.consequence().statements().len(), 1);
+        assert_eq!(if_expression.consequence.statements.len(), 1);
         let expression_statement =
-            check_expression_statement(&if_expression.consequence().statements()[0]);
-        test_identifier_expression(expression_statement.expression(), "x");
+            check_expression_statement(&if_expression.consequence.statements[0]);
+        test_identifier_expression(&expression_statement.expression, "x");
 
-        assert!(if_expression.alternate().is_some());
-        let alternate_block = if_expression.alternate().as_ref().unwrap();
-        assert_eq!(alternate_block.statements().len(), 1);
-        let expression_statement = check_expression_statement(&alternate_block.statements()[0]);
-        test_identifier_expression(expression_statement.expression(), "y");
+        assert!(if_expression.alternate.is_some());
+        let alternate_block = if_expression.alternate.as_ref().unwrap();
+        assert_eq!(alternate_block.statements.len(), 1);
+        let expression_statement = check_expression_statement(&alternate_block.statements[0]);
+        test_identifier_expression(&expression_statement.expression, "y");
     }
 
     #[test]
@@ -889,24 +903,24 @@ return 993322;
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
         let expression_statement = check_expression_statement(&statements[0]);
         let function_literal = expression_statement
-            .expression()
+            .expression
             .as_any()
             .downcast_ref::<FunctionLiteral>()
             .expect("expression is not a function literal");
 
-        assert_eq!(2, function_literal.parameters().len());
-        test_identifier(&function_literal.parameters()[0], "x");
-        test_identifier(&function_literal.parameters()[1], "y");
+        assert_eq!(2, function_literal.parameters.len());
+        test_identifier(&function_literal.parameters[0], "x");
+        test_identifier(&function_literal.parameters[1], "y");
 
-        let body_statement = function_literal.body().statements()[0]
+        let body_statement = function_literal.body.statements[0]
             .as_any()
             .downcast_ref::<ExpressionStatement>()
             .expect("Body doesn't contain an expression statement");
-        test_infix_expression_identifier(body_statement.expression(), "x", "y", &Token::Plus);
+        test_infix_expression_identifier(&body_statement.expression, "x", "y", &Token::Plus);
     }
 
     #[test]
@@ -921,18 +935,18 @@ return 993322;
             let l = Lexer::new(tc.0);
             let mut p = Parser::new(l);
             let program = check_parse_errors(p.parse_program());
-            let statements = program.statements();
+            let statements = program.statements;
             assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
             let expression_statement = check_expression_statement(&statements[0]);
             let function_literal = expression_statement
-                .expression()
+                .expression
                 .as_any()
                 .downcast_ref::<FunctionLiteral>()
                 .expect("expression is not a function literal");
-            assert_eq!(function_literal.parameters().len(), tc.1.len());
+            assert_eq!(function_literal.parameters.len(), tc.1.len());
 
             for (idx, val) in (&tc.1).into_iter().enumerate() {
-                test_identifier(&function_literal.parameters()[idx], val);
+                test_identifier(&function_literal.parameters[idx], val);
             }
         }
     }
@@ -943,11 +957,11 @@ return 993322;
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = check_parse_errors(p.parse_program());
-        let statements = program.statements();
+        let statements = program.statements;
         assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
         let expression_statement = check_expression_statement(&statements[0]);
         let call_expression = expression_statement
-            .expression()
+            .expression
             .as_any()
             .downcast_ref::<CallExpression>()
             .expect("expression is not a call expression");
@@ -958,6 +972,7 @@ return 993322;
         test_infix_expression(&call_expression.arguments[2], 4, 5, &Token::Plus);
     }
 
+    #[test]
     fn test_function_args_parsing() {
         struct TestCase<'a> {
             input: &'a str,
@@ -988,11 +1003,11 @@ return 993322;
             let l = Lexer::new(input);
             let mut p = Parser::new(l);
             let program = check_parse_errors(p.parse_program());
-            let statements = program.statements();
+            let statements = program.statements;
             assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
             let expression_statement = check_expression_statement(&statements[0]);
             let call_expression = expression_statement
-                .expression()
+                .expression
                 .as_any()
                 .downcast_ref::<CallExpression>()
                 .expect("expression is not a call expression");
