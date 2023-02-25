@@ -8,8 +8,8 @@ pub fn eval(node: &Node) -> Object {
     match node {
         Node::Expression(e) => eval_expression(e),
         Node::Statement(s) => eval_statement(s),
-        Node::Program(p) => eval_statements(&p.statements),
-        Node::BlockStatement(b) => eval_statements(&b.statements),
+        Node::Program(p) => eval_statements(&p.statements, true),
+        Node::BlockStatement(b) => eval_statements(&b.statements, false),
     }
 }
 
@@ -33,10 +33,10 @@ fn eval_expression(expression: &Expression) -> Object {
 fn eval_if_expression(expression: &IfExpression) -> Object {
     let condition = eval_expression(&expression.condition);
     if is_truthy(&condition) {
-        return eval_statements(&expression.consequence.statements);
+        return eval_statements(&expression.consequence.statements, false);
     }
     match &expression.alternate {
-        Some(s) => eval_statements(&s.statements),
+        Some(s) => eval_statements(&s.statements, false),
         None => Object::Null(),
     }
 }
@@ -86,6 +86,7 @@ fn eval_bang_operator_expression(e: &Expression) -> Object {
         Object::Boolean(true) => false,
         Object::Boolean(false) => true,
         Object::Null() => true,
+        Object::Return(_) => return res,
     };
     Object::Boolean(b)
 }
@@ -101,15 +102,22 @@ fn eval_minus_expression(e: &Expression) -> Object {
 fn eval_statement(statement: &Statement) -> Object {
     match statement {
         Statement::LetStatement(_) => todo!(),
-        Statement::ReturnStatement(_) => todo!(),
         Statement::ExpressionStatement(e) => eval_expression(&e.expression),
+        Statement::ReturnStatement(s) => Object::Return(Box::new(eval_expression(&s.return_value))),
     }
 }
 
-fn eval_statements(statements: &Vec<Statement>) -> Object {
+fn eval_statements(statements: &Vec<Statement>, is_outermost: bool) -> Object {
     let mut result = Object::Null();
     for statement in statements.iter() {
         result = eval_statement(statement);
+        if result.is_return() {
+            return if is_outermost {
+                result.get_return().unwrap()
+            } else {
+                result
+            };
+        }
     }
     result
 }
@@ -141,12 +149,8 @@ mod tests {
         ];
 
         for tc in tests.iter() {
-            let o = test_eval(tc.0);
-            let res = match o {
-                Object::Integer(x) => x,
-                _ => panic!("Result {} is not an integer", o.inspect()),
-            };
-            assert_eq!(tc.1, res);
+            let res = test_eval(tc.0);
+            assert_eq!(Object::Integer(tc.1), res);
         }
     }
 
@@ -220,6 +224,24 @@ mod tests {
         for tc in tests.iter() {
             let o = test_eval(tc.0);
             assert_eq!(tc.1, o);
+        }
+    }
+
+    #[test]
+    fn test_return_statement() {
+        let tests = [
+            ("return 10;", 10),
+            ("return 10; 9;", 10),
+            ("return 2 * 5; 9;", 10),
+            ("9; return 2 * 5; 9;", 10),
+            (
+                "if (10 > 1) { if (10 > 1) { return 10; } return 1; }",
+                10,
+            ),
+        ];
+        for tc in tests.iter() {
+            let res = test_eval(tc.0);
+            assert_eq!(res, Object::Integer(tc.1));
         }
     }
 

@@ -4,6 +4,7 @@ pub enum Object {
     Integer(i64),
     Boolean(bool),
     Null(),
+    Return(Box<Object>),
 }
 
 impl Object {
@@ -12,6 +13,21 @@ impl Object {
             Object::Integer(x) => x.to_string(),
             Object::Boolean(x) => x.to_string(),
             Object::Null() => "null".to_string(),
+            Object::Return(x) => x.inspect(),
+        }
+    }
+
+    pub fn is_return(&self) -> bool {
+        match self {
+            Object::Return(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn get_return(self) -> Option<Object> {
+        match self {
+           Object::Return(x) => Some(*x),
+           _ => None,
         }
     }
 }
