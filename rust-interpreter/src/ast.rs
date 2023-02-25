@@ -6,6 +6,7 @@ pub enum Node {
     Expression(Expression),
     Statement(Statement),
     Program(Program),
+    BlockStatement(BlockStatement),
 }
 
 pub enum Expression {
@@ -67,6 +68,7 @@ impl Display for Node {
             Node::Expression(x) => x.to_string(),
             Node::Statement(x) => x.to_string(),
             Node::Program(x) => x.to_string(),
+            Node::BlockStatement(x) => x.to_string(),
         };
         f.write_str(res.as_str())
     }
@@ -88,6 +90,7 @@ impl Node {
             Node::Expression(e) => e.token(),
             Node::Statement(s) => s.token(),
             Node::Program(p) => p.token(),
+            Node::BlockStatement(b) => Some(&b.token),
         }
     }
 }

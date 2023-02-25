@@ -1,4 +1,5 @@
 use ast::Program;
+use evaluator::eval;
 use lexer::Lexer;
 use parser::ParseErrors;
 use std::io::{stdin, stdout, Write};
@@ -39,7 +40,7 @@ fn main() {
         let mut parser = Parser::new(lex);
         match parser.parse_program() {
             Err(e) => print_error(e),
-            Ok(p) => print_program(p),
+            Ok(p) => eval_program(p),
         };
     }
 }
@@ -54,6 +55,7 @@ fn print_error(errors: ParseErrors) {
     }
 }
 
-fn print_program(program: Program) {
-    println!("{}", program);
+fn eval_program(program: Program) {
+    let evaluated = eval(&ast::Node::Program(program));
+    println!("{}", evaluated.inspect());
 }
