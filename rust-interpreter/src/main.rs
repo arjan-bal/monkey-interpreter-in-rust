@@ -1,6 +1,7 @@
 use ast::Program;
 use evaluator::eval;
 use lexer::Lexer;
+use object::MutableEnvironment;
 use std::{
     error::Error,
     io::{stdin, stdout, Write},
@@ -44,7 +45,7 @@ fn main() {
         let mut parser = Parser::new(lex);
         match parser.parse_program() {
             Err(e) => print_error(Box::new(e)),
-            Ok(p) => eval_program(p, &mut env),
+            Ok(p) => eval_program(p, &env),
         };
     }
 }
@@ -55,7 +56,7 @@ fn print_error(error: Box<dyn Error>) {
     println!(" error:\n{}", error);
 }
 
-fn eval_program(program: Program, env: &mut Environment) {
+fn eval_program(program: Program, env: &MutableEnvironment) {
     match eval(&ast::Node::Program(program), env) {
         Ok(evaluated) => println!("{}", evaluated.inspect()),
         Err(e) => print_error(Box::new(e)),

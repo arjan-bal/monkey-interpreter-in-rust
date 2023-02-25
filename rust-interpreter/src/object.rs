@@ -1,12 +1,34 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use crate::ast::{BlockStatement, Identifier};
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+pub type RObject = Rc<Object>;
+pub type MutableEnvironment = Rc<RefCell<Environment>>;
+
 pub enum Object {
     Integer(i64),
     Boolean(bool),
     Null(),
-    Return(Box<Object>),
+    Return(RObject),
+    Function(Function),
+}
+
+pub struct Function {
+    pub environment: Environment,
+    pub parameters: Rc<Vec<Identifier>>,
+    pub body: Rc<BlockStatement>,
+}
+
+impl Function {
+    fn inspect(&self) -> String {
+        let params = self
+            .parameters
+            .iter()
+            .map(|i| i.name.clone())
+            .collect::<Vec<String>>()
+            .join(", ");
+        format!("fn ({}) {{\n{}\n}}", params, self.body.to_string())
+    }
 }
 
 impl Object {
@@ -16,6 +38,7 @@ impl Object {
             Object::Boolean(x) => x.to_string(),
             Object::Null() => "null".to_string(),
             Object::Return(x) => x.inspect(),
+            Object::Function(f) => f.inspect(),
         }
     }
 
@@ -25,7 +48,9 @@ impl Object {
             Object::Boolean(_) => "BOOLEAN",
             Object::Null() => "NULL",
             Object::Return(_) => "RETURN",
-        }.to_string()
+            Object::Function(_) => "FUNCTION",
+        }
+        .to_string()
     }
 
     pub fn is_return(&self) -> bool {
@@ -35,28 +60,53 @@ impl Object {
         }
     }
 
-    pub fn get_return(self) -> Option<Object> {
+    pub fn get_return(&self) -> Option<RObject> {
         match self {
-           Object::Return(x) => Some(*x),
-           _ => None,
+            Object::Return(x) => Some(Rc::clone(x)),
+            _ => None,
+        }
+    }
+
+    pub fn get_integer(&self) -> Option<i64> {
+        match self {
+            Object::Integer(x) => Some(*x),
+            _ => None,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            Object::Null() => true,
+            _ => false,
         }
     }
 }
 
 pub struct Environment {
-    store: HashMap<String, Object>,
+    parent: Option<MutableEnvironment>,
+    store: HashMap<String, Rc<Object>>,
 }
 
 impl Environment {
-    pub fn new() -> Environment {
-        Environment { store: HashMap::new() }
+    pub fn new() -> MutableEnvironment {
+        Rc::new(RefCell::new(Environment {
+            parent: None,
+            store: HashMap::new(),
+        }))
     }
 
-    pub fn get(&self, name: &str) -> Option<&Object> {
+    pub fn new_owned(parent: Option<&MutableEnvironment>) -> Environment {
+        Environment {
+            parent: parent.and_then(|p| Some(Rc::clone(p))),
+            store: HashMap::new(),
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Rc<Object>> {
         self.store.get(name)
     }
 
-    pub fn set(&mut self, name: &str, value: Object) {
-        self.store.insert(name.to_owned(), value);
+    pub fn set(&mut self, name: &str, value: &Rc<Object>) {
+        self.store.insert(name.to_owned(), Rc::clone(value));
     }
 }

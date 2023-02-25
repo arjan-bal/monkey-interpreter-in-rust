@@ -1,10 +1,10 @@
 use crate::{
-    ast::{Expression, IfExpression, Node, PrefixExpression, Statement},
-    object::{Environment, Object},
+    ast::{Expression, FunctionLiteral, IfExpression, Node, PrefixExpression, Statement},
+    object::{Environment, Function, MutableEnvironment, Object, RObject},
     token::Token,
 };
-use std::fmt::Display;
 use std::{error::Error, fmt};
+use std::{fmt::Display, rc::Rc};
 
 #[derive(Debug)]
 pub struct EvalError(String);
@@ -17,9 +17,9 @@ impl Display for EvalError {
     }
 }
 
-type EvalResult = Result<Object, EvalError>;
+type EvalResult = Result<RObject, EvalError>;
 
-pub fn eval(node: &Node, env: &mut Environment) -> EvalResult {
+pub fn eval(node: &Node, env: &MutableEnvironment) -> EvalResult {
     match node {
         Node::Expression(e) => eval_expression(e, env),
         Node::Statement(s) => eval_statement(s, env),
@@ -28,34 +28,43 @@ pub fn eval(node: &Node, env: &mut Environment) -> EvalResult {
     }
 }
 
-fn eval_expression(expression: &Expression, env: &mut Environment) -> EvalResult {
+fn eval_expression(expression: &Expression, env: &MutableEnvironment) -> EvalResult {
     match expression {
-        Expression::IntegerLiteral(x) => Ok(Object::Integer(x.value)),
-        Expression::Identifier(i) => match env.get(&i.name) {
-            Some(o) => Ok(o.clone()),
+        Expression::IntegerLiteral(x) => Ok(Rc::new(Object::Integer(x.value))),
+        Expression::Identifier(i) => match env.borrow().get(&i.name) {
+            Some(o) => Ok(Rc::clone(o)),
             None => Err(EvalError(format!("identifier not found: {}", &i.name))),
         },
-        Expression::Boolean(b) => Ok(Object::Boolean(b.value)),
+        Expression::Boolean(b) => Ok(Rc::new(Object::Boolean(b.value))),
         Expression::CallExpression(_) => todo!(),
         Expression::IfExpression(e) => eval_if_expression(e, env),
-        Expression::FunctionLiteral(_) => todo!(),
+        Expression::FunctionLiteral(f) => Ok(eval_function_literal(f, env)),
         Expression::InfixExpression(e) => {
             let left = eval_expression(&e.left, env)?;
             let right = eval_expression(&e.right, env)?;
-            eval_infix_expression(&left, &right, &e.operator, env)
+            eval_infix_expression(&left, &right, &e.operator)
         }
         Expression::PrefixExpression(e) => eval_prefix_expression(e, env),
     }
 }
 
-fn eval_if_expression(expression: &IfExpression, env: &mut Environment) -> EvalResult {
+fn eval_function_literal(fl: &FunctionLiteral, env: &MutableEnvironment) -> RObject {
+    let env = Environment::new_owned(Some(&env));
+    Rc::new(Object::Function(Function {
+        environment: env,
+        parameters: Rc::clone(&fl.parameters),
+        body: Rc::clone(&fl.body),
+    }))
+}
+
+fn eval_if_expression(expression: &IfExpression, env: &MutableEnvironment) -> EvalResult {
     let condition = eval_expression(&expression.condition, env)?;
     if is_truthy(&condition) {
         return eval_statements(&expression.consequence.statements, false, env);
     }
     match &expression.alternate {
         Some(s) => eval_statements(&s.statements, false, env),
-        None => Ok(Object::Null()),
+        None => Ok(Rc::from(Object::Null())),
     }
 }
 
@@ -67,9 +76,9 @@ fn is_truthy(object: &Object) -> bool {
     }
 }
 
-fn eval_prefix_expression(e: &PrefixExpression, env: &mut Environment) -> EvalResult {
+fn eval_prefix_expression(e: &PrefixExpression, env: &MutableEnvironment) -> EvalResult {
     let right = eval_expression(&e.right, env)?;
-    match (&e.token, &right) {
+    match (&e.token, right.as_ref()) {
         (Token::Bang, _) => Ok(eval_bang_operator_expression(right)),
         (Token::Minus, Object::Integer(i)) => Ok(eval_minus_expression(*i)),
         _ => Err(EvalError(format!(
@@ -84,7 +93,6 @@ fn eval_infix_expression(
     left: &Object,
     right: &Object,
     operator: &Token,
-    env: &mut Environment,
 ) -> EvalResult {
     if left.type_name() != right.type_name() {
         return Err(EvalError(format!(
@@ -134,44 +142,45 @@ fn eval_infix_expression(
             )))
         }
     };
-    Ok(res)
+    Ok(Rc::new(res))
 }
 
-fn eval_bang_operator_expression(res: Object) -> Object {
-    let b = match res {
-        Object::Integer(_) => false,
-        Object::Boolean(true) => false,
-        Object::Boolean(false) => true,
-        Object::Null() => true,
+fn eval_bang_operator_expression(res: RObject) -> RObject {
+    match *res {
+        Object::Integer(_) => Rc::from(Object::Boolean(false)),
+        Object::Boolean(true) => Rc::from(Object::Boolean(false)),
+        Object::Boolean(false) => Rc::from(Object::Boolean(true)),
+        Object::Null() => Rc::from(Object::Boolean(true)),
         Object::Return(_) => return res,
-    };
-    Object::Boolean(b)
+        Object::Function(_) => todo!(),
+    }
 }
 
-fn eval_minus_expression(res: i64) -> Object {
-    Object::Integer(-res)
+fn eval_minus_expression(res: i64) -> RObject {
+    Rc::new(Object::Integer(-res))
 }
 
-fn eval_statement(statement: &Statement, env: &mut Environment) -> EvalResult {
+fn eval_statement(statement: &Statement, env: &MutableEnvironment) -> EvalResult {
     Ok(match statement {
         Statement::LetStatement(l) => {
             let res = eval_expression(&l.value, env)?;
-            env.set(&l.name.name, res.clone());
+            env.borrow_mut().set(&l.name.name, &Rc::clone(&res));
             res
         }
         Statement::ExpressionStatement(e) => eval_expression(&e.expression, env)?,
-        Statement::ReturnStatement(s) => {
-            Object::Return(Box::new(eval_expression(&s.return_value, env)?))
-        }
+        Statement::ReturnStatement(s) => Rc::new(Object::Return(Rc::clone(&eval_expression(
+            &s.return_value,
+            env,
+        )?))),
     })
 }
 
 fn eval_statements(
     statements: &Vec<Statement>,
     is_outermost: bool,
-    env: &mut Environment,
+    env: &MutableEnvironment,
 ) -> EvalResult {
-    let mut result = Object::Null();
+    let mut result = Rc::from(Object::Null());
     for statement in statements.iter() {
         result = eval_statement(statement, env)?;
         if result.is_return() {
@@ -218,7 +227,7 @@ mod tests {
 
         for tc in tests.iter() {
             let res = test_eval(tc.0).unwrap();
-            assert_eq!(Object::Integer(tc.1), res);
+            assert_eq!(tc.1, res.get_integer().unwrap());
         }
     }
 
@@ -248,7 +257,7 @@ mod tests {
 
         for tc in tests.iter() {
             let o = test_eval(tc.0).unwrap();
-            let res = match o {
+            let res = match *o {
                 Object::Boolean(x) => x,
                 _ => panic!("Result {} is not an bool", o.inspect()),
             };
@@ -269,7 +278,7 @@ mod tests {
 
         for tc in tests.iter() {
             let o = test_eval(tc.0).unwrap();
-            let res = match o {
+            let res = match *o {
                 Object::Boolean(x) => x,
                 _ => panic!("Result {} is not an bool", o.inspect()),
             };
@@ -291,7 +300,11 @@ mod tests {
 
         for tc in tests.iter() {
             let o = test_eval(tc.0).unwrap();
-            assert_eq!(tc.1, o);
+            match tc.1 {
+                Object::Integer(x) => assert_eq!(x, o.get_integer().unwrap()),
+                Object::Null() => assert!(o.is_null()),
+                _ => panic!("Equality not implemented"),
+            }
         }
     }
 
@@ -306,7 +319,7 @@ mod tests {
         ];
         for tc in tests.iter() {
             let res = test_eval(tc.0).unwrap();
-            assert_eq!(res, Object::Integer(tc.1));
+            assert_eq!(res.get_integer().unwrap(), tc.1);
         }
     }
 
@@ -354,14 +367,28 @@ return 1;
 
         for tc in tests.iter() {
             let res = test_eval(tc.0).unwrap();
-            assert_eq!(res, Object::Integer(tc.1));
+            assert_eq!(res.get_integer().unwrap(), tc.1);
         }
+    }
+
+    #[test]
+    fn test_function_object() {
+        let input = "fn(x) { x + 2; };";
+
+        let res = test_eval(input).unwrap();
+        let function = match res.as_ref() {
+            Object::Function(f) => f,
+            _ => panic!("Got {} instead of a function!", res.inspect()),
+        };
+        assert_eq!(1, function.parameters.len());
+        assert_eq!("x", function.parameters[0].name);
+        assert_eq!("(x + 2)", function.body.to_string());
     }
 
     fn test_eval(input: &str) -> EvalResult {
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = p.parse_program().unwrap();
-        eval(&Node::Program(program), &mut Environment::new())
+        eval(&Node::Program(program), &Environment::new())
     }
 }

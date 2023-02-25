@@ -1,4 +1,4 @@
-use std::fmt::{self, Display};
+use std::{fmt::{self, Display}, rc::Rc};
 
 use crate::token::Token;
 
@@ -274,8 +274,8 @@ impl Display for BlockStatement {
 
 pub struct FunctionLiteral {
     pub token: Token,
-    pub parameters: Vec<Identifier>,
-    pub body: BlockStatement,
+    pub parameters: Rc<Vec<Identifier>>,
+    pub body: Rc<BlockStatement>,
 }
 
 impl Display for FunctionLiteral {

@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     error::Error,
     fmt::{self, Display},
+    rc::Rc,
 };
 
 use crate::{
@@ -259,8 +260,8 @@ impl ParserInternal {
             let body = parser.parse_block_statement(ctx)?;
             Ok(Expression::FunctionLiteral(FunctionLiteral {
                 token,
-                parameters,
-                body,
+                parameters: Rc::new(parameters),
+                body: Rc::new(body),
             }))
         };
         Box::new(f)
