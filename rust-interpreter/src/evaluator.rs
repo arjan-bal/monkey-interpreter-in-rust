@@ -3,8 +3,23 @@ use crate::{
     object::Object,
     token::Token,
 };
+use std::{error::Error, fmt};
+use std::{fmt::Display, mem::discriminant};
 
-pub fn eval(node: &Node) -> Object {
+#[derive(Debug)]
+pub struct EvalError(String);
+
+impl Error for EvalError {}
+
+impl Display for EvalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+type EvalResult = Result<Object, EvalError>;
+
+pub fn eval(node: &Node) -> EvalResult {
     match node {
         Node::Expression(e) => eval_expression(e),
         Node::Statement(s) => eval_statement(s),
@@ -13,31 +28,31 @@ pub fn eval(node: &Node) -> Object {
     }
 }
 
-fn eval_expression(expression: &Expression) -> Object {
+fn eval_expression(expression: &Expression) -> EvalResult {
     match expression {
-        Expression::IntegerLiteral(x) => Object::Integer(x.value),
+        Expression::IntegerLiteral(x) => Ok(Object::Integer(x.value)),
         Expression::Identifier(_) => todo!(),
-        Expression::Boolean(b) => Object::Boolean(b.value),
+        Expression::Boolean(b) => Ok(Object::Boolean(b.value)),
         Expression::CallExpression(_) => todo!(),
         Expression::IfExpression(e) => eval_if_expression(e),
         Expression::FunctionLiteral(_) => todo!(),
         Expression::InfixExpression(e) => {
-            let left = eval_expression(&e.left);
-            let right = eval_expression(&e.right);
+            let left = eval_expression(&e.left)?;
+            let right = eval_expression(&e.right)?;
             eval_infix_expression(&left, &right, &e.operator)
         }
         Expression::PrefixExpression(e) => eval_prefix_expression(e),
     }
 }
 
-fn eval_if_expression(expression: &IfExpression) -> Object {
-    let condition = eval_expression(&expression.condition);
+fn eval_if_expression(expression: &IfExpression) -> EvalResult {
+    let condition = eval_expression(&expression.condition)?;
     if is_truthy(&condition) {
         return eval_statements(&expression.consequence.statements, false);
     }
     match &expression.alternate {
         Some(s) => eval_statements(&s.statements, false),
-        None => Object::Null(),
+        None => Ok(Object::Null()),
     }
 }
 
@@ -49,16 +64,29 @@ fn is_truthy(object: &Object) -> bool {
     }
 }
 
-fn eval_prefix_expression(e: &PrefixExpression) -> Object {
-    match e.token {
-        Token::Bang => eval_bang_operator_expression(&e.right),
-        Token::Minus => eval_minus_expression(&e.right),
-        _ => todo!(),
+fn eval_prefix_expression(e: &PrefixExpression) -> EvalResult {
+    let right = eval_expression(&e.right)?;
+    match (&e.token, &right) {
+        (Token::Bang, _) => Ok(eval_bang_operator_expression(right)),
+        (Token::Minus, Object::Integer(i)) => Ok(eval_minus_expression(*i)),
+        _ => Err(EvalError(format!(
+            "unknown operator: {}{}",
+            e.token,
+            right.type_name()
+        ))),
     }
 }
 
-fn eval_infix_expression(left: &Object, right: &Object, operator: &Token) -> Object {
-    match (left, right) {
+fn eval_infix_expression(left: &Object, right: &Object, operator: &Token) -> EvalResult {
+    if left.type_name() != right.type_name() {
+        return Err(EvalError(format!(
+            "type mismatch: {} {} {}",
+            left.type_name(),
+            operator,
+            right.type_name()
+        )));
+    }
+    let res = match (left, right) {
         (&Object::Integer(l), &Object::Integer(r)) => match operator {
             &Token::Plus => Object::Integer(l + r),
             &Token::Minus => Object::Integer(l - r),
@@ -68,19 +96,40 @@ fn eval_infix_expression(left: &Object, right: &Object, operator: &Token) -> Obj
             &Token::GT => Object::Boolean(l > r),
             &Token::EQ => Object::Boolean(l == r),
             &Token::NotEq => Object::Boolean(l != r),
-            _ => panic!("Operator {} not supported for integers", operator),
+            _ => {
+                return Err(EvalError(format!(
+                    "unknown operator: {} {} {}",
+                    left.type_name(),
+                    operator,
+                    right.type_name(),
+                )))
+            }
         },
         (&Object::Boolean(l), &Object::Boolean(r)) => match operator {
             &Token::EQ => Object::Boolean(l == r),
             &Token::NotEq => Object::Boolean(l != r),
-            _ => panic!("Operator {} not supported for booleans", operator),
+            _ => {
+                return Err(EvalError(format!(
+                    "unknown operator: {} {} {}",
+                    left.type_name(),
+                    operator,
+                    right.type_name(),
+                )))
+            }
         },
-        _ => todo!(),
-    }
+        _ => {
+            return Err(EvalError(format!(
+                "unknown operator: {} {} {}",
+                left.type_name(),
+                operator,
+                right.type_name(),
+            )))
+        }
+    };
+    Ok(res)
 }
 
-fn eval_bang_operator_expression(e: &Expression) -> Object {
-    let res = eval_expression(e);
+fn eval_bang_operator_expression(res: Object) -> Object {
     let b = match res {
         Object::Integer(_) => false,
         Object::Boolean(true) => false,
@@ -91,42 +140,40 @@ fn eval_bang_operator_expression(e: &Expression) -> Object {
     Object::Boolean(b)
 }
 
-fn eval_minus_expression(e: &Expression) -> Object {
-    let res = eval_expression(e);
-    match res {
-        Object::Integer(x) => Object::Integer(-x),
-        _ => panic!("Can't apply - to non integer value {}", res.inspect()),
-    }
+fn eval_minus_expression(res: i64) -> Object {
+    Object::Integer(-res)
 }
 
-fn eval_statement(statement: &Statement) -> Object {
-    match statement {
+fn eval_statement(statement: &Statement) -> EvalResult {
+    Ok(match statement {
         Statement::LetStatement(_) => todo!(),
-        Statement::ExpressionStatement(e) => eval_expression(&e.expression),
-        Statement::ReturnStatement(s) => Object::Return(Box::new(eval_expression(&s.return_value))),
-    }
+        Statement::ExpressionStatement(e) => eval_expression(&e.expression)?,
+        Statement::ReturnStatement(s) => {
+            Object::Return(Box::new(eval_expression(&s.return_value)?))
+        }
+    })
 }
 
-fn eval_statements(statements: &Vec<Statement>, is_outermost: bool) -> Object {
+fn eval_statements(statements: &Vec<Statement>, is_outermost: bool) -> EvalResult {
     let mut result = Object::Null();
     for statement in statements.iter() {
-        result = eval_statement(statement);
+        result = eval_statement(statement)?;
         if result.is_return() {
-            return if is_outermost {
+            return Ok(if is_outermost {
                 result.get_return().unwrap()
             } else {
                 result
-            };
+            });
         }
     }
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{ast::Node, lexer::Lexer, object::Object, parser::Parser};
 
-    use super::eval;
+    use super::{eval, EvalResult};
 
     #[test]
     fn test_evaluate_int_expression() {
@@ -149,7 +196,7 @@ mod tests {
         ];
 
         for tc in tests.iter() {
-            let res = test_eval(tc.0);
+            let res = test_eval(tc.0).unwrap();
             assert_eq!(Object::Integer(tc.1), res);
         }
     }
@@ -179,7 +226,7 @@ mod tests {
         ];
 
         for tc in tests.iter() {
-            let o = test_eval(tc.0);
+            let o = test_eval(tc.0).unwrap();
             let res = match o {
                 Object::Boolean(x) => x,
                 _ => panic!("Result {} is not an bool", o.inspect()),
@@ -200,7 +247,7 @@ mod tests {
         ];
 
         for tc in tests.iter() {
-            let o = test_eval(tc.0);
+            let o = test_eval(tc.0).unwrap();
             let res = match o {
                 Object::Boolean(x) => x,
                 _ => panic!("Result {} is not an bool", o.inspect()),
@@ -222,7 +269,7 @@ mod tests {
         ];
 
         for tc in tests.iter() {
-            let o = test_eval(tc.0);
+            let o = test_eval(tc.0).unwrap();
             assert_eq!(tc.1, o);
         }
     }
@@ -234,18 +281,47 @@ mod tests {
             ("return 10; 9;", 10),
             ("return 2 * 5; 9;", 10),
             ("9; return 2 * 5; 9;", 10),
-            (
-                "if (10 > 1) { if (10 > 1) { return 10; } return 1; }",
-                10,
-            ),
+            ("if (10 > 1) { if (10 > 1) { return 10; } return 1; }", 10),
         ];
         for tc in tests.iter() {
-            let res = test_eval(tc.0);
+            let res = test_eval(tc.0).unwrap();
             assert_eq!(res, Object::Integer(tc.1));
         }
     }
 
-    fn test_eval(input: &str) -> Object {
+    #[test]
+    fn test_error_handling() {
+        let tests = [
+            ("5 + true;", "type mismatch: INTEGER + BOOLEAN"),
+            ("5 + true; 5;", "type mismatch: INTEGER + BOOLEAN"),
+            ("-true", "unknown operator: -BOOLEAN"),
+            ("true + false;", "unknown operator: BOOLEAN + BOOLEAN"),
+            ("5; true + false; 5", "unknown operator: BOOLEAN + BOOLEAN"),
+            (
+                "if (10 > 1){ true + false; }",
+                "unknown operator: BOOLEAN + BOOLEAN",
+            ),
+            (
+                "
+132
+if (10 > 1){
+if (10 > 1){
+return true + false;
+}
+return 1;
+}
+",
+                "unknown operator: BOOLEAN + BOOLEAN",
+            ),
+        ];
+
+        for tc in tests.iter() {
+            let res = test_eval(tc.0);
+            assert_eq!(res.err().unwrap().0, tc.1);
+        }
+    }
+
+    fn test_eval(input: &str) -> EvalResult {
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = p.parse_program().unwrap();

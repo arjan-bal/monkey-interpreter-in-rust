@@ -1,19 +1,22 @@
 use ast::Program;
 use evaluator::eval;
 use lexer::Lexer;
-use parser::ParseErrors;
-use std::io::{stdin, stdout, Write};
+use std::{
+    error::Error,
+    io::{stdin, stdout, Write},
+};
 
 use crate::parser::Parser;
 
 mod ast;
+mod evaluator;
 mod lexer;
+mod object;
 mod parser;
 mod token;
-mod object;
-mod evaluator;
 
-const GREETING_MESSAGE: &str = "Hello mrnugget! This is the Monkey programming language!\nFeel free to type in commands";
+const GREETING_MESSAGE: &str =
+    "Hello mrnugget! This is the Monkey programming language!\nFeel free to type in commands";
 const PROMPT: &str = ">>";
 const MONKEY_FACE: &str = r#"
             __,__
@@ -39,23 +42,21 @@ fn main() {
         let lex = Lexer::new(&input);
         let mut parser = Parser::new(lex);
         match parser.parse_program() {
-            Err(e) => print_error(e),
+            Err(e) => print_error(Box::new(e)),
             Ok(p) => eval_program(p),
         };
     }
 }
 
-fn print_error(errors: ParseErrors) {
+fn print_error(error: Box<dyn Error>) {
     println!("{}", MONKEY_FACE);
     println!("Whoops! We ran into some monkey business here!");
-    println!(" parser errors:");
-
-    for err in errors.0 {
-        println!("\t{}", err);
-    }
+    println!(" error:\n{}", error);
 }
 
 fn eval_program(program: Program) {
-    let evaluated = eval(&ast::Node::Program(program));
-    println!("{}", evaluated.inspect());
+    match eval(&ast::Node::Program(program)) {
+        Ok(evaluated) => println!("{}", evaluated.inspect()),
+        Err(e) => print_error(Box::new(e)),
+    }
 }

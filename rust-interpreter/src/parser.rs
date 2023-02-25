@@ -110,7 +110,15 @@ impl Error for ParseErrors {}
 
 impl Display for ParseErrors {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0)
+        write!(
+            f,
+            "{:?}",
+            self.0
+                .iter()
+                .map(|e| e.0.to_string())
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
     }
 }
 

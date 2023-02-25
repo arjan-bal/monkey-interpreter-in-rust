@@ -17,6 +17,15 @@ impl Object {
         }
     }
 
+    pub fn type_name(&self) -> String {
+        match &self {
+            Object::Integer(_) => "INTEGER",
+            Object::Boolean(_) => "BOOLEAN",
+            Object::Null() => "NULL",
+            Object::Return(_) => "RETURN",
+        }.to_string()
+    }
+
     pub fn is_return(&self) -> bool {
         match self {
             Object::Return(_) => true,
