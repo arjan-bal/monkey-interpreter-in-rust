@@ -129,12 +129,12 @@ impl Display for Program {
 
 pub struct Identifier {
     pub token: Token,
-    pub value: String,
+    pub name: String,
 }
 
 impl Identifier {
     pub fn new(token: Token) -> Identifier {
-        let value = if let Token::Ident(s) = &token {
+        let name = if let Token::Ident(s) = &token {
             s.clone()
         } else {
             panic!(
@@ -142,13 +142,13 @@ impl Identifier {
                 token
             );
         };
-        Identifier { token, value }
+        Identifier { token, name }
     }
 }
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.name)
     }
 }
 
@@ -346,7 +346,7 @@ impl LetStatement {
             token,
             name: Identifier {
                 token: identifier,
-                value: name,
+                name,
             },
             value,
         }

@@ -1,10 +1,10 @@
 use crate::{
     ast::{Expression, IfExpression, Node, PrefixExpression, Statement},
-    object::Object,
+    object::{Environment, Object},
     token::Token,
 };
+use std::fmt::Display;
 use std::{error::Error, fmt};
-use std::{fmt::Display, mem::discriminant};
 
 #[derive(Debug)]
 pub struct EvalError(String);
@@ -19,39 +19,42 @@ impl Display for EvalError {
 
 type EvalResult = Result<Object, EvalError>;
 
-pub fn eval(node: &Node) -> EvalResult {
+pub fn eval(node: &Node, env: &mut Environment) -> EvalResult {
     match node {
-        Node::Expression(e) => eval_expression(e),
-        Node::Statement(s) => eval_statement(s),
-        Node::Program(p) => eval_statements(&p.statements, true),
-        Node::BlockStatement(b) => eval_statements(&b.statements, false),
+        Node::Expression(e) => eval_expression(e, env),
+        Node::Statement(s) => eval_statement(s, env),
+        Node::Program(p) => eval_statements(&p.statements, true, env),
+        Node::BlockStatement(b) => eval_statements(&b.statements, false, env),
     }
 }
 
-fn eval_expression(expression: &Expression) -> EvalResult {
+fn eval_expression(expression: &Expression, env: &mut Environment) -> EvalResult {
     match expression {
         Expression::IntegerLiteral(x) => Ok(Object::Integer(x.value)),
-        Expression::Identifier(_) => todo!(),
+        Expression::Identifier(i) => match env.get(&i.name) {
+            Some(o) => Ok(o.clone()),
+            None => Err(EvalError(format!("identifier not found: {}", &i.name))),
+        },
         Expression::Boolean(b) => Ok(Object::Boolean(b.value)),
         Expression::CallExpression(_) => todo!(),
-        Expression::IfExpression(e) => eval_if_expression(e),
+        Expression::IfExpression(e) => eval_if_expression(e, env),
         Expression::FunctionLiteral(_) => todo!(),
         Expression::InfixExpression(e) => {
-            let left = eval_expression(&e.left)?;
-            let right = eval_expression(&e.right)?;
-            eval_infix_expression(&left, &right, &e.operator)
+            let left = eval_expression(&e.left, env)?;
+            let right = eval_expression(&e.right, env)?;
+            eval_infix_expression(&left, &right, &e.operator, env)
         }
-        Expression::PrefixExpression(e) => eval_prefix_expression(e),
+        Expression::PrefixExpression(e) => eval_prefix_expression(e, env),
     }
 }
 
-fn eval_if_expression(expression: &IfExpression) -> EvalResult {
-    let condition = eval_expression(&expression.condition)?;
+fn eval_if_expression(expression: &IfExpression, env: &mut Environment) -> EvalResult {
+    let condition = eval_expression(&expression.condition, env)?;
     if is_truthy(&condition) {
-        return eval_statements(&expression.consequence.statements, false);
+        return eval_statements(&expression.consequence.statements, false, env);
     }
     match &expression.alternate {
-        Some(s) => eval_statements(&s.statements, false),
+        Some(s) => eval_statements(&s.statements, false, env),
         None => Ok(Object::Null()),
     }
 }
@@ -64,8 +67,8 @@ fn is_truthy(object: &Object) -> bool {
     }
 }
 
-fn eval_prefix_expression(e: &PrefixExpression) -> EvalResult {
-    let right = eval_expression(&e.right)?;
+fn eval_prefix_expression(e: &PrefixExpression, env: &mut Environment) -> EvalResult {
+    let right = eval_expression(&e.right, env)?;
     match (&e.token, &right) {
         (Token::Bang, _) => Ok(eval_bang_operator_expression(right)),
         (Token::Minus, Object::Integer(i)) => Ok(eval_minus_expression(*i)),
@@ -77,7 +80,12 @@ fn eval_prefix_expression(e: &PrefixExpression) -> EvalResult {
     }
 }
 
-fn eval_infix_expression(left: &Object, right: &Object, operator: &Token) -> EvalResult {
+fn eval_infix_expression(
+    left: &Object,
+    right: &Object,
+    operator: &Token,
+    env: &mut Environment,
+) -> EvalResult {
     if left.type_name() != right.type_name() {
         return Err(EvalError(format!(
             "type mismatch: {} {} {}",
@@ -144,20 +152,28 @@ fn eval_minus_expression(res: i64) -> Object {
     Object::Integer(-res)
 }
 
-fn eval_statement(statement: &Statement) -> EvalResult {
+fn eval_statement(statement: &Statement, env: &mut Environment) -> EvalResult {
     Ok(match statement {
-        Statement::LetStatement(_) => todo!(),
-        Statement::ExpressionStatement(e) => eval_expression(&e.expression)?,
+        Statement::LetStatement(l) => {
+            let res = eval_expression(&l.value, env)?;
+            env.set(&l.name.name, res.clone());
+            res
+        }
+        Statement::ExpressionStatement(e) => eval_expression(&e.expression, env)?,
         Statement::ReturnStatement(s) => {
-            Object::Return(Box::new(eval_expression(&s.return_value)?))
+            Object::Return(Box::new(eval_expression(&s.return_value, env)?))
         }
     })
 }
 
-fn eval_statements(statements: &Vec<Statement>, is_outermost: bool) -> EvalResult {
+fn eval_statements(
+    statements: &Vec<Statement>,
+    is_outermost: bool,
+    env: &mut Environment,
+) -> EvalResult {
     let mut result = Object::Null();
     for statement in statements.iter() {
-        result = eval_statement(statement)?;
+        result = eval_statement(statement, env)?;
         if result.is_return() {
             return Ok(if is_outermost {
                 result.get_return().unwrap()
@@ -171,7 +187,12 @@ fn eval_statements(statements: &Vec<Statement>, is_outermost: bool) -> EvalResul
 
 #[cfg(test)]
 mod tests {
-    use crate::{ast::Node, lexer::Lexer, object::Object, parser::Parser};
+    use crate::{
+        ast::Node,
+        lexer::Lexer,
+        object::{Environment, Object},
+        parser::Parser,
+    };
 
     use super::{eval, EvalResult};
 
@@ -313,6 +334,7 @@ return 1;
 ",
                 "unknown operator: BOOLEAN + BOOLEAN",
             ),
+            ("foobar", "identifier not found: foobar"),
         ];
 
         for tc in tests.iter() {
@@ -321,10 +343,25 @@ return 1;
         }
     }
 
+    #[test]
+    fn test_let_statements() {
+        let tests = [
+            ("let a = 5; a;", 5),
+            ("let a = 5 * 5; a;", 25),
+            ("let a = 5; let b = a; b;", 5),
+            ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
+        ];
+
+        for tc in tests.iter() {
+            let res = test_eval(tc.0).unwrap();
+            assert_eq!(res, Object::Integer(tc.1));
+        }
+    }
+
     fn test_eval(input: &str) -> EvalResult {
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = p.parse_program().unwrap();
-        eval(&Node::Program(program))
+        eval(&Node::Program(program), &mut Environment::new())
     }
 }

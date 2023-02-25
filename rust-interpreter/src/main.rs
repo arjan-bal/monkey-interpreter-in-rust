@@ -6,7 +6,7 @@ use std::{
     io::{stdin, stdout, Write},
 };
 
-use crate::parser::Parser;
+use crate::{parser::Parser, object::Environment};
 
 mod ast;
 mod evaluator;
@@ -34,6 +34,7 @@ const MONKEY_FACE: &str = r#"
 
 fn main() {
     println!("{}", GREETING_MESSAGE);
+    let mut env = Environment::new();
     loop {
         print!("{} ", PROMPT);
         stdout().flush().unwrap();
@@ -43,7 +44,7 @@ fn main() {
         let mut parser = Parser::new(lex);
         match parser.parse_program() {
             Err(e) => print_error(Box::new(e)),
-            Ok(p) => eval_program(p),
+            Ok(p) => eval_program(p, &mut env),
         };
     }
 }
@@ -54,8 +55,8 @@ fn print_error(error: Box<dyn Error>) {
     println!(" error:\n{}", error);
 }
 
-fn eval_program(program: Program) {
-    match eval(&ast::Node::Program(program)) {
+fn eval_program(program: Program, env: &mut Environment) {
+    match eval(&ast::Node::Program(program), env) {
         Ok(evaluated) => println!("{}", evaluated.inspect()),
         Err(e) => print_error(Box::new(e)),
     }

@@ -534,7 +534,7 @@ let foobar = 838383;
             } else {
                 panic!("Statement {} is not a LetStatement!", statement)
             };
-            assert_eq!(let_statement.name.value, name);
+            assert_eq!(let_statement.name.name, name);
             let got_name = match &let_statement.name.token {
                 Token::Ident(s) => s,
                 _ => panic!(
@@ -604,7 +604,7 @@ return 993322;
 
     fn test_identifier(identifier: &Identifier, name: &str) {
         assert_eq!(&identifier.token, &Token::Ident(name.to_owned().clone()));
-        assert_eq!(identifier.value, name);
+        assert_eq!(identifier.name, name);
     }
 
     fn test_integer_literal(expression: &Expression, value: i64) {

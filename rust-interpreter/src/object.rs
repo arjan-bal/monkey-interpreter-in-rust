@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 
-#[derive(PartialEq, Eq, Debug)]
+
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Object {
     Integer(i64),
     Boolean(bool),
@@ -38,5 +40,23 @@ impl Object {
            Object::Return(x) => Some(*x),
            _ => None,
         }
+    }
+}
+
+pub struct Environment {
+    store: HashMap<String, Object>,
+}
+
+impl Environment {
+    pub fn new() -> Environment {
+        Environment { store: HashMap::new() }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Object> {
+        self.store.get(name)
+    }
+
+    pub fn set(&mut self, name: &str, value: Object) {
+        self.store.insert(name.to_owned(), value);
     }
 }
