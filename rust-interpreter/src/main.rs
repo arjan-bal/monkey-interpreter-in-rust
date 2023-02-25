@@ -35,7 +35,7 @@ const MONKEY_FACE: &str = r#"
 
 fn main() {
     println!("{}", GREETING_MESSAGE);
-    let mut env = Environment::new();
+    let env = Environment::new();
     loop {
         print!("{} ", PROMPT);
         stdout().flush().unwrap();

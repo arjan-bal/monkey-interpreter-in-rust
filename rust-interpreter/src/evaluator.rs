@@ -1,5 +1,8 @@
 use crate::{
-    ast::{Expression, FunctionLiteral, IfExpression, Node, PrefixExpression, Statement},
+    ast::{
+        CallExpression, Expression, FunctionLiteral, IfExpression, Node, PrefixExpression,
+        Statement,
+    },
     object::{Environment, Function, MutableEnvironment, Object, RObject},
     token::Token,
 };
@@ -32,11 +35,11 @@ fn eval_expression(expression: &Expression, env: &MutableEnvironment) -> EvalRes
     match expression {
         Expression::IntegerLiteral(x) => Ok(Rc::new(Object::Integer(x.value))),
         Expression::Identifier(i) => match env.borrow().get(&i.name) {
-            Some(o) => Ok(Rc::clone(o)),
+            Some(o) => Ok(Rc::clone(&o)),
             None => Err(EvalError(format!("identifier not found: {}", &i.name))),
         },
         Expression::Boolean(b) => Ok(Rc::new(Object::Boolean(b.value))),
-        Expression::CallExpression(_) => todo!(),
+        Expression::CallExpression(e) => eval_call_expression(e, env),
         Expression::IfExpression(e) => eval_if_expression(e, env),
         Expression::FunctionLiteral(f) => Ok(eval_function_literal(f, env)),
         Expression::InfixExpression(e) => {
@@ -48,10 +51,37 @@ fn eval_expression(expression: &Expression, env: &MutableEnvironment) -> EvalRes
     }
 }
 
+fn eval_call_expression(exp: &CallExpression, env: &MutableEnvironment) -> EvalResult {
+    let function = eval_expression(exp.function.as_ref(), env)?;
+    let function = match function.as_ref() {
+        Object::Function(f) => f,
+        _ => {
+            return Err(EvalError(format!(
+                "Expected function object, found {}",
+                function.inspect()
+            )))
+        }
+    };
+    // Insert all the parameter values into the functions environment.
+    if exp.arguments.len() != function.parameters.len() {
+        return Err(EvalError(format!(
+            "Argument list length not equal to parameter list length: {} != {}",
+            exp.arguments.len(),
+            function.parameters.len(),
+        )));
+    }
+    let extended_env = Environment::new_enclosed(Some(&function.environment));
+    for (idx, ident) in function.parameters.iter().enumerate() {
+        let value = &eval_expression(&exp.arguments[idx], env)?;
+        extended_env.borrow_mut().set(&ident.name, value);
+    }
+    // evaluate the expression body with the new environment.
+    eval_statements(&function.body.statements, true, &extended_env)
+}
+
 fn eval_function_literal(fl: &FunctionLiteral, env: &MutableEnvironment) -> RObject {
-    let env = Environment::new_owned(Some(&env));
     Rc::new(Object::Function(Function {
-        environment: env,
+        environment: Rc::clone(env),
         parameters: Rc::clone(&fl.parameters),
         body: Rc::clone(&fl.body),
     }))
@@ -89,11 +119,7 @@ fn eval_prefix_expression(e: &PrefixExpression, env: &MutableEnvironment) -> Eva
     }
 }
 
-fn eval_infix_expression(
-    left: &Object,
-    right: &Object,
-    operator: &Token,
-) -> EvalResult {
+fn eval_infix_expression(left: &Object, right: &Object, operator: &Token) -> EvalResult {
     if left.type_name() != right.type_name() {
         return Err(EvalError(format!(
             "type mismatch: {} {} {}",
@@ -204,6 +230,22 @@ mod tests {
     };
 
     use super::{eval, EvalResult};
+
+    impl Object {
+        pub fn get_integer(&self) -> Option<i64> {
+            match self {
+                Object::Integer(x) => Some(*x),
+                _ => None,
+            }
+        }
+
+        pub fn is_null(&self) -> bool {
+            match self {
+                Object::Null() => true,
+                _ => false,
+            }
+        }
+    }
 
     #[test]
     fn test_evaluate_int_expression() {
@@ -383,6 +425,34 @@ return 1;
         assert_eq!(1, function.parameters.len());
         assert_eq!("x", function.parameters[0].name);
         assert_eq!("(x + 2)", function.body.to_string());
+    }
+
+    #[test]
+    fn test_function_application() {
+        let tests = [
+            ("let identity = fn(x) { x; }; identity(5);", 5),
+            ("let identity = fn(x) { return x; }; identity(5);", 5),
+            ("let double = fn(x) { x * 2; }; double(5);", 10),
+            ("let add = fn(x, y) { x + y; }; add(5, 5);", 10),
+            ("let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));", 20),
+            ("fn(x) { x; }(5)", 5),
+        ];
+
+        for tc in tests.iter() {
+            let res = test_eval(tc.0).unwrap();
+            assert_eq!(tc.1, res.get_integer().unwrap());
+        }
+    }
+
+    #[test]
+    fn test_closures() {
+        let input = "let newAdder = fn(x) {
+fn(y) { x + y };
+};
+let addTwo = newAdder(2);
+addTwo(2);";
+        let res = test_eval(input).unwrap();
+        assert_eq!(4, res.get_integer().unwrap());
     }
 
     fn test_eval(input: &str) -> EvalResult {

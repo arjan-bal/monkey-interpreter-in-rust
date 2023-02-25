@@ -502,6 +502,16 @@ mod tests {
 
     use super::ParseErrors;
 
+    impl Statement {
+        pub fn token(&self) -> Option<&Token> {
+            match &self {
+                Statement::LetStatement(x) => Some(&x.token),
+                Statement::ReturnStatement(x) => Some(&x.token),
+                Statement::ExpressionStatement(x) => Some(&x.token),
+            }
+        }
+    }
+
     fn check_parse_errors(res: Result<Program, ParseErrors>) -> Program {
         assert!(
             res.is_ok(),

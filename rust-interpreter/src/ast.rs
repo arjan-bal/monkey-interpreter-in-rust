@@ -20,21 +20,6 @@ pub enum Expression {
     PrefixExpression(PrefixExpression),
 }
 
-impl Expression {
-    pub fn token(&self) -> Option<&Token> {
-        match &self {
-            Expression::Identifier(x) => Some(&x.token),
-            Expression::IntegerLiteral(x) => Some(&x.token),
-            Expression::Boolean(x) => Some(&x.token),
-            Expression::CallExpression(x) => Some(&x.token),
-            Expression::IfExpression(x) => Some(&x.token),
-            Expression::FunctionLiteral(x) => Some(&x.token),
-            Expression::InfixExpression(x) => Some(&x.token),
-            Expression::PrefixExpression(x) => Some(&x.token),
-        }
-    }
-}
-
 impl Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let res = match &self {
@@ -74,27 +59,6 @@ impl Display for Node {
     }
 }
 
-impl Statement {
-    pub fn token(&self) -> Option<&Token> {
-        match &self {
-            Statement::LetStatement(x) => Some(&x.token),
-            Statement::ReturnStatement(x) => Some(&x.token),
-            Statement::ExpressionStatement(x) => Some(&x.token),
-        }
-    }
-}
-
-impl Node {
-    pub fn token(&self) -> Option<&Token> {
-        match &self {
-            Node::Expression(e) => e.token(),
-            Node::Statement(s) => s.token(),
-            Node::Program(p) => p.token(),
-            Node::BlockStatement(b) => Some(&b.token),
-        }
-    }
-}
-
 pub enum Statement {
     LetStatement(LetStatement),
     ReturnStatement(ReturnStatement),
@@ -103,16 +67,6 @@ pub enum Statement {
 
 pub struct Program {
     pub statements: Vec<Statement>,
-}
-
-impl Program {
-    fn token(&self) -> Option<&Token> {
-        if self.statements.is_empty() {
-            None
-        } else {
-            self.statements[0].token()
-        }
-    }
 }
 
 impl Display for Program {
@@ -324,12 +278,6 @@ pub struct LetStatement {
 impl Display for LetStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {} = {}", self.token, self.name, self.value)
-    }
-}
-
-impl LetStatement {
-    fn token(&self) -> Option<&Token> {
-        Some(&self.token)
     }
 }
 

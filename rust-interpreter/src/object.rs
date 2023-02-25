@@ -14,7 +14,7 @@ pub enum Object {
 }
 
 pub struct Function {
-    pub environment: Environment,
+    pub environment: MutableEnvironment,
     pub parameters: Rc<Vec<Identifier>>,
     pub body: Rc<BlockStatement>,
 }
@@ -67,19 +67,6 @@ impl Object {
         }
     }
 
-    pub fn get_integer(&self) -> Option<i64> {
-        match self {
-            Object::Integer(x) => Some(*x),
-            _ => None,
-        }
-    }
-
-    pub fn is_null(&self) -> bool {
-        match self {
-            Object::Null() => true,
-            _ => false,
-        }
-    }
 }
 
 pub struct Environment {
@@ -95,15 +82,27 @@ impl Environment {
         }))
     }
 
-    pub fn new_owned(parent: Option<&MutableEnvironment>) -> Environment {
-        Environment {
+    pub fn new_enclosed(parent: Option<&MutableEnvironment>) -> MutableEnvironment {
+        Rc::new(RefCell::new(Environment {
             parent: parent.and_then(|p| Some(Rc::clone(p))),
             store: HashMap::new(),
-        }
+        }))
     }
 
-    pub fn get(&self, name: &str) -> Option<&Rc<Object>> {
-        self.store.get(name)
+    pub fn get(&self, name: &str) -> Option<Rc<Object>> {
+        let ret = self.store.get(name);
+        if ret.is_some() {
+            return Some(ret.unwrap().clone());
+        }
+
+        if self.parent.is_none() {
+            return None;
+        }
+
+        match self.parent.as_ref().unwrap().borrow_mut().get(name) {
+            Some(x) => Some(x.clone()),
+            None => None,
+        }
     }
 
     pub fn set(&mut self, name: &str, value: &Rc<Object>) {
