@@ -51,6 +51,14 @@ impl Token {
             _ => self.to_owned(),
         }
     }
+
+    /// Returns `true` if the token is [`Ident`].
+    ///
+    /// [`Ident`]: Token::Ident
+    #[must_use]
+    pub fn is_ident(&self) -> bool {
+        matches!(self, Self::Ident(..))
+    }
 }
 
 impl Display for Token {

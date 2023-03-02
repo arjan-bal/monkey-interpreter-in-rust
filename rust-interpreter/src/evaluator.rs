@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        CallExpression, Expression, FunctionLiteral, IfExpression, Node, PrefixExpression,
+        CallExpression, Expression, FunctionLiteral, IfExpression, Node, PrefixExpression, Program,
         Statement,
     },
     object::{Environment, Function, MutableEnvironment, Object, RObject},
@@ -26,9 +26,13 @@ pub fn eval(node: &Node, env: &MutableEnvironment) -> EvalResult {
     match node {
         Node::Expression(e) => eval_expression(e, env),
         Node::Statement(s) => eval_statement(s, env),
-        Node::Program(p) => eval_statements(&p.statements, true, env),
+        Node::Program(p) => eval_program(&p, env),
         Node::BlockStatement(b) => eval_statements(&b.statements, false, env),
     }
+}
+
+pub fn eval_program(program: &Program, env: &MutableEnvironment) -> EvalResult {
+    eval_statements(&program.statements, true, env)
 }
 
 fn eval_expression(expression: &Expression, env: &MutableEnvironment) -> EvalResult {

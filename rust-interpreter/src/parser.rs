@@ -113,7 +113,7 @@ impl Display for ParseErrors {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{:?}",
+            "{}",
             self.0
                 .iter()
                 .map(|e| e.0.to_string())
@@ -414,7 +414,14 @@ impl ParserInternal {
             "Expected an identifier token, but found: {:?}",
             self.cur_token.as_ref()
         )))?;
-        Ok(ident_token)
+        if !ident_token.is_ident() {
+            Err(ParseError(format!(
+                "Expected an identifier token, but found: {}",
+                ident_token
+            )))
+        } else {
+            Ok(ident_token)
+        }
     }
 
     fn expect_peek(&mut self, expected: Token) -> Result<(), ParseError> {
