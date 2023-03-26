@@ -70,6 +70,14 @@ impl Object {
         }
     }
 
+
+    pub fn as_string(&self) -> Option<&String> {
+        if let Self::String(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
 }
 
 pub struct Environment {

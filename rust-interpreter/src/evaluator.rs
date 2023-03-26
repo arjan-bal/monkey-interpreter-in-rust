@@ -164,6 +164,19 @@ fn eval_infix_expression(left: &Object, right: &Object, operator: &Token) -> Eva
                 )))
             }
         },
+        (&Object::String(_), &Object::String(_)) => match operator {
+            &Token::Plus => Object::String(
+                String::new() + &left.as_string().unwrap() + &right.as_string().unwrap(),
+            ),
+            _ => {
+                return Err(EvalError(format!(
+                    "unknown operator: {} {} {}",
+                    left.type_name(),
+                    operator,
+                    right.type_name(),
+                )))
+            }
+        },
         _ => {
             return Err(EvalError(format!(
                 "unknown operator: {} {} {}",
@@ -245,13 +258,6 @@ mod tests {
             }
         }
 
-        fn get_string(&self) -> Option<&str> {
-            match self {
-                Object::String(x) => Some(x),
-                _ => None,
-            }
-        }
-
         fn is_null(&self) -> bool {
             match self {
                 Object::Null() => true,
@@ -288,11 +294,14 @@ mod tests {
 
     #[test]
     fn test_evaluate_string_expression() {
-        let tests = [("\"Hello World!\"", "Hello World!")];
+        let tests = [
+            ("\"Hello World!\"", "Hello World!"),
+            ("\"Hello\" + \" \" + \"World!\"", "Hello World!"),
+        ];
 
         for tc in tests.iter() {
             let res = test_eval(tc.0).unwrap();
-            assert_eq!(tc.1, res.get_string().unwrap());
+            assert_eq!(tc.1, res.as_string().unwrap());
         }
     }
 
