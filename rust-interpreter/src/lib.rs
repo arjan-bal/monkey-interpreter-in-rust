@@ -8,7 +8,7 @@ mod token;
 use std::error::Error;
 
 use ast::Program;
-use evaluator::eval_program;
+use evaluator::Evaluator;
 use lexer::Lexer;
 use object::{Environment, MutableEnvironment};
 use parser::Parser;
@@ -29,12 +29,14 @@ const MONKEY_FACE: &str = r#"
 
 pub struct Interpreter {
     environment: MutableEnvironment,
+    evaluator: Evaluator,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
             environment: Environment::new(),
+            evaluator: Evaluator::new(),
         }
     }
 
@@ -55,7 +57,7 @@ impl Interpreter {
     }
 
     fn evaluate_program(&self, program: Program) -> String {
-        match eval_program(&program, &self.environment) {
+        match self.evaluator.eval_program(&program, &self.environment) {
             Ok(evaluated) => format!("{}", evaluated.inspect()),
             Err(e) => Self::format_error(Box::new(e)),
         }

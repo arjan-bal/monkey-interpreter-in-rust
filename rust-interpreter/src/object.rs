@@ -1,6 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::ast::{BlockStatement, Identifier};
+use crate::{
+    ast::{BlockStatement, Identifier},
+    evaluator::EvalError,
+};
 
 pub type RObject = Rc<Object>;
 pub type MutableEnvironment = Rc<RefCell<Environment>>;
@@ -12,12 +15,20 @@ pub enum Object {
     Null(),
     Return(RObject),
     Function(Function),
+    Builtin(Builtin),
 }
 
 pub struct Function {
     pub environment: MutableEnvironment,
     pub parameters: Rc<Vec<Identifier>>,
     pub body: Rc<BlockStatement>,
+}
+
+type BuiltinFunction = Box<dyn Fn(&Vec<RObject>) -> Result<Object, EvalError>>;
+
+pub struct Builtin {
+    pub(crate) func: BuiltinFunction,
+    pub(crate) name: String,
 }
 
 impl Function {
@@ -41,6 +52,7 @@ impl Object {
             Object::Null() => "null".to_string(),
             Object::Return(x) => x.inspect(),
             Object::Function(f) => f.inspect(),
+            Object::Builtin(f) => f.name.clone(),
         }
     }
 
@@ -52,6 +64,7 @@ impl Object {
             Object::Null() => "NULL",
             Object::Return(_) => "RETURN",
             Object::Function(_) => "FUNCTION",
+            Object::Builtin(_) => "BUILTIN",
         }
         .to_string()
     }
@@ -69,7 +82,6 @@ impl Object {
             _ => None,
         }
     }
-
 
     pub fn as_string(&self) -> Option<&String> {
         if let Self::String(v) = self {
