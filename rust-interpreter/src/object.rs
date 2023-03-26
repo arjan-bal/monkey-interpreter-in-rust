@@ -7,6 +7,7 @@ pub type MutableEnvironment = Rc<RefCell<Environment>>;
 
 pub enum Object {
     Integer(i64),
+    String(String),
     Boolean(bool),
     Null(),
     Return(RObject),
@@ -36,6 +37,7 @@ impl Object {
         match &self {
             Object::Integer(x) => x.to_string(),
             Object::Boolean(x) => x.to_string(),
+            Object::String(x) => x.to_string(),
             Object::Null() => "null".to_string(),
             Object::Return(x) => x.inspect(),
             Object::Function(f) => f.inspect(),
@@ -45,6 +47,7 @@ impl Object {
     pub fn type_name(&self) -> String {
         match &self {
             Object::Integer(_) => "INTEGER",
+            Object::String(_) => "STRING",
             Object::Boolean(_) => "BOOLEAN",
             Object::Null() => "NULL",
             Object::Return(_) => "RETURN",

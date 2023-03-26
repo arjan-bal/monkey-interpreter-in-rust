@@ -38,6 +38,7 @@ pub fn eval_program(program: &Program, env: &MutableEnvironment) -> EvalResult {
 fn eval_expression(expression: &Expression, env: &MutableEnvironment) -> EvalResult {
     match expression {
         Expression::IntegerLiteral(x) => Ok(Rc::new(Object::Integer(x.value))),
+        Expression::StringLiteral(x) => Ok(Rc::new(Object::String(x.value.clone()))),
         Expression::Identifier(i) => match env.borrow().get(&i.name) {
             Some(o) => Ok(Rc::clone(&o)),
             None => Err(EvalError(format!("identifier not found: {}", &i.name))),
@@ -177,12 +178,13 @@ fn eval_infix_expression(left: &Object, right: &Object, operator: &Token) -> Eva
 
 fn eval_bang_operator_expression(res: RObject) -> RObject {
     match *res {
-        Object::Integer(_) => Rc::from(Object::Boolean(false)),
+        Object::Integer(_) | Object::String(_) | Object::Function(_) => {
+            Rc::from(Object::Boolean(false))
+        }
         Object::Boolean(true) => Rc::from(Object::Boolean(false)),
         Object::Boolean(false) => Rc::from(Object::Boolean(true)),
         Object::Null() => Rc::from(Object::Boolean(true)),
         Object::Return(_) => return res,
-        Object::Function(_) => todo!(),
     }
 }
 
@@ -236,14 +238,21 @@ mod tests {
     use super::{eval, EvalResult};
 
     impl Object {
-        pub fn get_integer(&self) -> Option<i64> {
+        fn get_integer(&self) -> Option<i64> {
             match self {
                 Object::Integer(x) => Some(*x),
                 _ => None,
             }
         }
 
-        pub fn is_null(&self) -> bool {
+        fn get_string(&self) -> Option<&str> {
+            match self {
+                Object::String(x) => Some(x),
+                _ => None,
+            }
+        }
+
+        fn is_null(&self) -> bool {
             match self {
                 Object::Null() => true,
                 _ => false,
@@ -274,6 +283,16 @@ mod tests {
         for tc in tests.iter() {
             let res = test_eval(tc.0).unwrap();
             assert_eq!(tc.1, res.get_integer().unwrap());
+        }
+    }
+
+    #[test]
+    fn test_evaluate_string_expression() {
+        let tests = [("\"Hello World!\"", "Hello World!")];
+
+        for tc in tests.iter() {
+            let res = test_eval(tc.0).unwrap();
+            assert_eq!(tc.1, res.get_string().unwrap());
         }
     }
 

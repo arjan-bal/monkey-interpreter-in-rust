@@ -13,6 +13,7 @@ pub enum Expression {
     Identifier(Identifier),
     IntegerLiteral(IntegerLiteral),
     Boolean(Boolean),
+    StringLiteral(StringLiteral),
     CallExpression(CallExpression),
     IfExpression(IfExpression),
     FunctionLiteral(FunctionLiteral),
@@ -25,6 +26,7 @@ impl Display for Expression {
         let res = match &self {
             Expression::Identifier(x) => x.to_string(),
             Expression::IntegerLiteral(x) => x.to_string(),
+            Expression::StringLiteral(x) => x.to_string(),
             Expression::Boolean(x) => x.to_string(),
             Expression::CallExpression(x) => x.to_string(),
             Expression::IfExpression(x) => x.to_string(),
@@ -128,6 +130,31 @@ impl IntegerLiteral {
             );
         };
         IntegerLiteral { token, value }
+    }
+}
+
+pub struct StringLiteral {
+    pub token: Token,
+    pub value: String,
+}
+
+impl Display for StringLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+impl StringLiteral {
+    pub fn new(token: Token) -> StringLiteral {
+        let value = if let Token::String(x) = &token {
+            x.clone()
+        } else {
+            panic!(
+                "Trying to create a StringLiteral with non String token: {}",
+                token
+            );
+        };
+        StringLiteral { token, value }
     }
 }
 

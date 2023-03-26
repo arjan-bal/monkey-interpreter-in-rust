@@ -9,7 +9,7 @@ use crate::{
     ast::{
         BlockStatement, Boolean, CallExpression, Expression, ExpressionStatement, FunctionLiteral,
         Identifier, IfExpression, InfixExpression, IntegerLiteral, LetStatement, PrefixExpression,
-        Program, ReturnStatement, Statement,
+        Program, ReturnStatement, Statement, StringLiteral,
     },
     lexer::Lexer,
     token::Token,
@@ -138,6 +138,7 @@ impl ParserInternal {
                 Token::Ident(String::from("")),
             ),
             (ParserInternal::parse_integer_literal(), Token::Int(0)),
+            (ParserInternal::parse_string_literal(), Token::String("".to_owned())),
             (ParserInternal::parse_boolean_literal(), Token::True),
             (ParserInternal::parse_boolean_literal(), Token::False),
             (
@@ -197,6 +198,14 @@ impl ParserInternal {
         let f = |parser: &mut ParserInternal, _: &ParsingContext| {
             let boolean_literal = parser.cur_token.as_ref().unwrap().clone();
             Ok(Expression::Boolean(Boolean::new(boolean_literal)))
+        };
+        Box::new(f)
+    }
+
+    fn parse_string_literal() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
+            let string_literal = parser.cur_token.as_ref().unwrap().clone();
+            Ok(Expression::StringLiteral(StringLiteral::new(string_literal)))
         };
         Box::new(f)
     }
@@ -635,6 +644,15 @@ return 993322;
         assert_eq!(int_literal.value, value);
     }
 
+    fn test_string_literal(expression: &Expression, value: &str) {
+        let string_literal = if let Expression::StringLiteral(e) = expression {
+            e
+        } else {
+            panic!("Expression is not an StringLiteral");
+        };
+        assert_eq!(string_literal.value, value);
+    }
+
     #[test]
     fn test_integer_literal_expression() {
         let input = "5;";
@@ -1046,5 +1064,19 @@ return 993322;
                 assert_eq!(arg, &call_expression.arguments[idx].to_string().as_str())
             }
         }
+    }
+
+    #[test]
+    fn test_string_literal_expression() {
+        let input = "\"hello world\"";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements;
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+
+        let expression_statement = check_expression_statement(&statements[0]);
+        test_string_literal(&expression_statement.expression, "hello world");
     }
 }

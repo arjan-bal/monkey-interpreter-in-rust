@@ -13,6 +13,8 @@ pub enum Token {
     True,
     False,
 
+    String(String),
+
     // Operators
     Assign,
     Plus,
@@ -48,6 +50,7 @@ impl Token {
         match self {
             Token::Ident(_) => Token::Ident("".to_owned()),
             Token::Int(_) => Token::Int(0),
+            Token::String(_) => Token::String("".to_owned()),
             _ => self.to_owned(),
         }
     }
@@ -95,6 +98,7 @@ impl Display for Token {
             Token::If => "if",
             Token::Else => "else",
             Token::Return => "return",
+            Token::String(s) => s,
         };
         write!(f, "{}", res)
     }

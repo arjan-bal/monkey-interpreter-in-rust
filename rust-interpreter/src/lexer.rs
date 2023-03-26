@@ -1,4 +1,4 @@
-use std::{collections::VecDeque};
+use std::collections::VecDeque;
 
 use crate::token::Token;
 
@@ -98,6 +98,19 @@ impl Lexer {
             return token;
         }
 
+        // check for string.
+        if ch == '"' {
+            str = String::new();
+            while input.front() != Some(&'"') {
+                str.push(input.pop_front().unwrap());
+            }
+            if input.front() != Some(&'"') {
+                return Token::Illegal;
+            }
+            input.pop_front().unwrap();
+            return Token::String(str);
+        }
+
         Token::Illegal
     }
 
@@ -137,6 +150,8 @@ if (5 < 10) {
 }
 10 == 10;
 10 != 9;
+"foobar"
+"foo bar"
 "#;
 
         let tests = [
@@ -213,6 +228,8 @@ if (5 < 10) {
             Token::NotEq,
             Token::Int(9),
             Token::Semicolon,
+            Token::String("foobar".to_owned()),
+            Token::String("foo bar".to_owned()),
             Token::EOF,
         ];
 
