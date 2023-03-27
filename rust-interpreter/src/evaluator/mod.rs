@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        CallExpression, Expression, FunctionLiteral, IfExpression, Node, PrefixExpression, Program,
+        CallExpression, Expression, FunctionLiteral, IfExpression, PrefixExpression, Program,
         Statement,
     },
     object::{Array, Environment, Function, MutableEnvironment, Object, RObject},
@@ -25,15 +25,6 @@ impl Evaluator {
     pub fn new() -> Evaluator {
         Evaluator {
             builtins: get_builtins(),
-        }
-    }
-
-    pub fn eval(&self, node: &Node, env: &MutableEnvironment) -> EvalResult {
-        match node {
-            Node::Expression(e) => self.eval_expression(e, env),
-            Node::Statement(s) => self.eval_statement(s, env),
-            Node::Program(p) => self.eval_program(&p, env),
-            Node::BlockStatement(b) => self.eval_statements(&b.statements, false, env),
         }
     }
 
@@ -312,7 +303,6 @@ mod tests {
     use std::rc::Rc;
 
     use crate::{
-        ast::Node,
         lexer::Lexer,
         object::{Environment, Object},
         parser::Parser,
@@ -642,6 +632,6 @@ addTwo(2);";
         let l = Lexer::new(input);
         let mut p = Parser::new(l);
         let program = p.parse_program().unwrap();
-        Evaluator::new().eval(&Node::Program(program), &Environment::new())
+        Evaluator::new().eval_program(&program, &Environment::new())
     }
 }

@@ -5,13 +5,6 @@ use std::{
 
 use crate::token::Token;
 
-pub enum Node {
-    Expression(Expression),
-    Statement(Statement),
-    Program(Program),
-    BlockStatement(BlockStatement),
-}
-
 pub enum Expression {
     Identifier(Identifier),
     IntegerLiteral(IntegerLiteral),
@@ -51,18 +44,6 @@ impl Display for Statement {
             Statement::LetStatement(x) => x.to_string(),
             Statement::ReturnStatement(x) => x.to_string(),
             Statement::ExpressionStatement(x) => x.to_string(),
-        };
-        f.write_str(res.as_str())
-    }
-}
-
-impl Display for Node {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let res = match &self {
-            Node::Expression(x) => x.to_string(),
-            Node::Statement(x) => x.to_string(),
-            Node::Program(x) => x.to_string(),
-            Node::BlockStatement(x) => x.to_string(),
         };
         f.write_str(res.as_str())
     }
