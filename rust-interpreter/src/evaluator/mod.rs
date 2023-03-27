@@ -3,7 +3,7 @@ use crate::{
         CallExpression, Expression, FunctionLiteral, IfExpression, Node, PrefixExpression, Program,
         Statement,
     },
-    object::{Environment, Function, MutableEnvironment, Object, RObject},
+    object::{Array, Environment, Function, MutableEnvironment, Object, RObject},
     token::Token,
 };
 use std::collections::HashMap;
@@ -63,20 +63,49 @@ impl Evaluator {
                 self.eval_infix_expression(&left, &right, &e.operator)
             }
             Expression::PrefixExpression(e) => self.eval_prefix_expression(e, env),
-            Expression::ArrayLiteral(_) => todo!(),
-            Expression::IndexExpression(_) => todo!(),
+            Expression::ArrayLiteral(a) => Ok(Rc::new(Object::Array(Array {
+                elements: self.eval_expressions(&a.elements, env)?,
+            }))),
+            Expression::IndexExpression(e) => {
+                // ensure left is an Array object after evaluation.
+                let array = self.eval_expression(&e.left, env)?;
+                let array = match &*array {
+                    Object::Array(a) => a,
+                    _ => {
+                        return Err(EvalError(format!(
+                            "Can't index into non-array type: {}",
+                            array.inspect()
+                        )))
+                    }
+                };
+
+                // Ensure index is an Integer object after evaluation.
+                let index = self.eval_expression(&e.index, env)?;
+                let index = match &*index {
+                    Object::Integer(i) => *i,
+                    _ => {
+                        return Err(EvalError(format!(
+                            "Can't use non-integer type as index: {}",
+                            index.inspect()
+                        )))
+                    }
+                };
+                let result = if index < 0 || index >= array.elements.len() as i64 {
+                    Rc::new(Object::Null())
+                } else {
+                    Rc::clone(&array.elements[index as usize])
+                };
+                Ok(result)
+            }
         }
     }
 
     fn eval_call_expression(&self, exp: &CallExpression, env: &MutableEnvironment) -> EvalResult {
         let function = self.eval_expression(exp.function.as_ref(), env)?;
+        let evaluated_args = self.eval_expressions(&exp.arguments, env)?;
         let function = match function.as_ref() {
             Object::Function(f) => f,
             Object::Builtin(b) => {
-                let mut evaluated_args = Vec::new();
-                for a in &exp.arguments {
-                    evaluated_args.push(self.eval_expression(a, env)?);
-                }
                 return Ok(Rc::new((b.func)(&evaluated_args)?));
             }
             _ => {
@@ -96,11 +125,24 @@ impl Evaluator {
         }
         let extended_env = Environment::new_enclosed(Some(&function.environment));
         for (idx, ident) in function.parameters.iter().enumerate() {
-            let value = &self.eval_expression(&exp.arguments[idx], env)?;
-            extended_env.borrow_mut().set(&ident.name, value);
+            extended_env
+                .borrow_mut()
+                .set(&ident.name, &evaluated_args[idx]);
         }
         // evaluate the expression body with the new environment.
         self.eval_statements(&function.body.statements, true, &extended_env)
+    }
+
+    fn eval_expressions(
+        &self,
+        expressions: &Vec<Expression>,
+        env: &MutableEnvironment,
+    ) -> Result<Vec<RObject>, EvalError> {
+        let mut result = Vec::new();
+        for a in expressions {
+            result.push(self.eval_expression(a, env)?);
+        }
+        Ok(result)
     }
 
     fn eval_function_literal(&self, fl: &FunctionLiteral, env: &MutableEnvironment) -> RObject {
@@ -214,9 +256,11 @@ impl Evaluator {
 
     fn eval_bang_operator_expression(&self, res: RObject) -> RObject {
         match *res {
-            Object::Integer(_) | Object::String(_) | Object::Function(_) | Object::Builtin(_) => {
-                Rc::from(Object::Boolean(false))
-            }
+            Object::Integer(_)
+            | Object::String(_)
+            | Object::Function(_)
+            | Object::Builtin(_)
+            | Object::Array(_) => Rc::from(Object::Boolean(false)),
             Object::Boolean(true) => Rc::from(Object::Boolean(false)),
             Object::Boolean(false) => Rc::from(Object::Boolean(true)),
             Object::Null() => Rc::from(Object::Boolean(true)),
@@ -546,6 +590,52 @@ let addTwo = newAdder(2);
 addTwo(2);";
         let res = test_eval(input).unwrap();
         assert_eq!(4, res.get_integer().unwrap());
+    }
+
+    #[test]
+    fn test_array_literals() {
+        let input = "[1, 2 * 2, 3 + 3]";
+        let res = test_eval(input).unwrap();
+        let array = match &*res {
+            Object::Array(a) => a,
+            _ => panic!("Result is not an array literal"),
+        };
+
+        assert_eq!(array.elements[0].get_integer().unwrap(), 1);
+        assert_eq!(array.elements[1].get_integer().unwrap(), 4);
+        assert_eq!(array.elements[2].get_integer().unwrap(), 6);
+    }
+
+    #[test]
+    fn test_array_index_expressions() {
+        let tests = [
+            ("[1, 2, 3][0]", Object::Integer(1)),
+            ("[1, 2, 3][1]", Object::Integer(2)),
+            ("[1, 2, 3][2]", Object::Integer(3)),
+            ("let i = 0; [1][i];", Object::Integer(1)),
+            ("[1, 2, 3][1 + 1];", Object::Integer(3)),
+            ("let myArray = [1, 2, 3]; myArray[2];", Object::Integer(3)),
+            (
+                "let myArray = [1, 2, 3]; myArray[0] + myArray[1] + myArray[2];",
+                Object::Integer(6),
+            ),
+            (
+                "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]",
+                Object::Integer(2),
+            ),
+            ("[1, 2, 3][3]", Object::Null()),
+            ("[1, 2, 3][-1]", Object::Null()),
+        ];
+
+        for tc in tests.iter() {
+            let input = tc.0;
+            let res = test_eval(input).unwrap();
+            match &tc.1 {
+                Object::Integer(x) => assert_eq!(*x, res.get_integer().unwrap()),
+                Object::Null() => assert!(matches!(*res, Object::Null())),
+                _ => panic!("Unknown match"),
+            };
+        }
     }
 
     fn test_eval(input: &str) -> EvalResult {

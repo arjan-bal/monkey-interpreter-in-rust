@@ -16,31 +16,7 @@ pub enum Object {
     Return(RObject),
     Function(Function),
     Builtin(Builtin),
-}
-
-pub struct Function {
-    pub environment: MutableEnvironment,
-    pub parameters: Rc<Vec<Identifier>>,
-    pub body: Rc<BlockStatement>,
-}
-
-type BuiltinFunction = Box<dyn Fn(&Vec<RObject>) -> Result<Object, EvalError>>;
-
-pub struct Builtin {
-    pub(crate) func: BuiltinFunction,
-    pub(crate) name: String,
-}
-
-impl Function {
-    fn inspect(&self) -> String {
-        let params = self
-            .parameters
-            .iter()
-            .map(|i| i.name.clone())
-            .collect::<Vec<String>>()
-            .join(", ");
-        format!("fn ({}) {{\n{}\n}}", params, self.body.to_string())
-    }
+    Array(Array),
 }
 
 impl Object {
@@ -53,6 +29,16 @@ impl Object {
             Object::Return(x) => x.inspect(),
             Object::Function(f) => f.inspect(),
             Object::Builtin(f) => f.name.clone(),
+            Object::Array(a) => {
+                format!(
+                    "[{}]",
+                    a.elements
+                        .iter()
+                        .map(|e| e.inspect())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
         }
     }
 
@@ -65,6 +51,7 @@ impl Object {
             Object::Return(_) => "RETURN",
             Object::Function(_) => "FUNCTION",
             Object::Builtin(_) => "BUILTIN",
+            Object::Array(_) => "ARRAY",
         }
         .to_string()
     }
@@ -92,9 +79,38 @@ impl Object {
     }
 }
 
+pub struct Function {
+    pub environment: MutableEnvironment,
+    pub parameters: Rc<Vec<Identifier>>,
+    pub body: Rc<BlockStatement>,
+}
+
+type BuiltinFunction = Box<dyn Fn(&Vec<RObject>) -> Result<Object, EvalError>>;
+
+pub struct Builtin {
+    pub(crate) func: BuiltinFunction,
+    pub(crate) name: String,
+}
+
+impl Function {
+    fn inspect(&self) -> String {
+        let params = self
+            .parameters
+            .iter()
+            .map(|i| i.name.clone())
+            .collect::<Vec<String>>()
+            .join(", ");
+        format!("fn ({}) {{\n{}\n}}", params, self.body.to_string())
+    }
+}
+
+pub struct Array {
+    pub elements: Vec<RObject>,
+}
+
 pub struct Environment {
     parent: Option<MutableEnvironment>,
-    store: HashMap<String, Rc<Object>>,
+    store: HashMap<String, RObject>,
 }
 
 impl Environment {
