@@ -63,6 +63,8 @@ impl Evaluator {
                 self.eval_infix_expression(&left, &right, &e.operator)
             }
             Expression::PrefixExpression(e) => self.eval_prefix_expression(e, env),
+            Expression::ArrayLiteral(_) => todo!(),
+            Expression::IndexExpression(_) => todo!(),
         }
     }
 

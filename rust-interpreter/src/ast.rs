@@ -1,4 +1,7 @@
-use std::{fmt::{self, Display}, rc::Rc};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+};
 
 use crate::token::Token;
 
@@ -14,11 +17,13 @@ pub enum Expression {
     IntegerLiteral(IntegerLiteral),
     Boolean(Boolean),
     StringLiteral(StringLiteral),
+    ArrayLiteral(ArrayLiteral),
     CallExpression(CallExpression),
     IfExpression(IfExpression),
     FunctionLiteral(FunctionLiteral),
     InfixExpression(InfixExpression),
     PrefixExpression(PrefixExpression),
+    IndexExpression(IndexExpression),
 }
 
 impl Display for Expression {
@@ -33,6 +38,8 @@ impl Display for Expression {
             Expression::FunctionLiteral(x) => x.to_string(),
             Expression::InfixExpression(x) => x.to_string(),
             Expression::PrefixExpression(x) => x.to_string(),
+            Expression::ArrayLiteral(x) => x.to_string(),
+            Expression::IndexExpression(x) => x.to_string(),
         };
         f.write_str(res.as_str())
     }
@@ -155,6 +162,37 @@ impl StringLiteral {
             );
         };
         StringLiteral { token, value }
+    }
+}
+
+pub struct ArrayLiteral {
+    pub token: Token,
+    pub elements: Vec<Expression>,
+}
+
+impl Display for ArrayLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}]",
+            self.elements
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+pub struct IndexExpression {
+    pub token: Token,
+    pub left: Box<Expression>,
+    pub index: Box<Expression>,
+}
+
+impl Display for IndexExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+       write!(f, "({}[{}])", self.left, self.index)
     }
 }
 

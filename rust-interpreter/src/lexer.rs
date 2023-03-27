@@ -31,6 +31,8 @@ impl Lexer {
             '}' => Token::RBrace,
             ',' => Token::Comma,
             ';' => Token::Semicolon,
+            '[' => Token::LBracket,
+            ']' => Token::RBracket,
             _ => return None,
         };
         Some(token)
@@ -152,6 +154,7 @@ if (5 < 10) {
 10 != 9;
 "foobar"
 "foo bar"
+[1, 2];
 "#;
 
         let tests = [
@@ -230,6 +233,12 @@ if (5 < 10) {
             Token::Semicolon,
             Token::String("foobar".to_owned()),
             Token::String("foo bar".to_owned()),
+            Token::LBracket,
+            Token::Int(1),
+            Token::Comma,
+            Token::Int(2),
+            Token::RBracket,
+            Token::Semicolon,
             Token::EOF,
         ];
 

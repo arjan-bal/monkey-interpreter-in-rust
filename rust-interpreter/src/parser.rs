@@ -7,9 +7,10 @@ use std::{
 
 use crate::{
     ast::{
-        BlockStatement, Boolean, CallExpression, Expression, ExpressionStatement, FunctionLiteral,
-        Identifier, IfExpression, InfixExpression, IntegerLiteral, LetStatement, PrefixExpression,
-        Program, ReturnStatement, Statement, StringLiteral,
+        ArrayLiteral, BlockStatement, Boolean, CallExpression, Expression, ExpressionStatement,
+        FunctionLiteral, Identifier, IfExpression, IndexExpression, InfixExpression,
+        IntegerLiteral, LetStatement, PrefixExpression, Program, ReturnStatement, Statement,
+        StringLiteral,
     },
     lexer::Lexer,
     token::Token,
@@ -73,6 +74,7 @@ impl ParsingContext {
             (Token::Slash, Precedence::Product),
             (Token::Asterisk, Precedence::Product),
             (Token::LParen, Precedence::Call),
+            (Token::LBracket, Precedence::Index),
         ]);
         ParsingContext {
             prefix_parse_fns: HashMap::new(),
@@ -102,6 +104,7 @@ enum Precedence {
     Product,     // *
     Prefix,      // -X or !X
     Call,        // myFunction(X)
+    Index,       // array[index]
 }
 
 #[derive(Debug)]
@@ -138,7 +141,10 @@ impl ParserInternal {
                 Token::Ident(String::from("")),
             ),
             (ParserInternal::parse_integer_literal(), Token::Int(0)),
-            (ParserInternal::parse_string_literal(), Token::String("".to_owned())),
+            (
+                ParserInternal::parse_string_literal(),
+                Token::String("".to_owned()),
+            ),
             (ParserInternal::parse_boolean_literal(), Token::True),
             (ParserInternal::parse_boolean_literal(), Token::False),
             (
@@ -152,6 +158,7 @@ impl ParserInternal {
             (ParserInternal::parse_grouped_expression(), Token::LParen),
             (ParserInternal::parse_if_expression(), Token::If),
             (ParserInternal::parse_function_literal(), Token::Function),
+            (ParserInternal::parse_array_literal(), Token::LBracket),
         ]);
         while !prefix_fns.is_empty() {
             let (func, token) = prefix_fns.pop().unwrap();
@@ -168,6 +175,7 @@ impl ParserInternal {
             (ParserInternal::parse_infix_expressions(), Token::LT),
             (ParserInternal::parse_infix_expressions(), Token::GT),
             (ParserInternal::parse_call_expression(), Token::LParen),
+            (ParserInternal::parse_index_expression(), Token::LBracket),
         ]);
         while !infix_fns.is_empty() {
             let (func, token) = infix_fns.pop().unwrap();
@@ -205,7 +213,9 @@ impl ParserInternal {
     fn parse_string_literal() -> PrefixParseFn {
         let f = |parser: &mut ParserInternal, _: &ParsingContext| {
             let string_literal = parser.cur_token.as_ref().unwrap().clone();
-            Ok(Expression::StringLiteral(StringLiteral::new(string_literal)))
+            Ok(Expression::StringLiteral(StringLiteral::new(
+                string_literal,
+            )))
         };
         Box::new(f)
     }
@@ -276,6 +286,15 @@ impl ParserInternal {
         Box::new(f)
     }
 
+    fn parse_array_literal() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
+            let token = parser.cur_token.take().unwrap();
+            let elements = parser.parse_expression_list(ctx, Token::RBracket)?;
+            Ok(Expression::ArrayLiteral(ArrayLiteral { token, elements }))
+        };
+        Box::new(f)
+    }
+
     fn parse_infix_expressions() -> InfixParseFn {
         let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
             let precedence = parser.cur_precedence(ctx);
@@ -292,7 +311,7 @@ impl ParserInternal {
     fn parse_call_expression() -> InfixParseFn {
         let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
             let token = parser.cur_token.take().unwrap();
-            let arguments = parser.parse_arguments(ctx)?;
+            let arguments = parser.parse_expression_list(ctx, Token::RParen)?;
             Ok(Expression::CallExpression(CallExpression {
                 token,
                 function: Box::new(left),
@@ -302,24 +321,43 @@ impl ParserInternal {
         Box::new(f)
     }
 
-    fn parse_arguments(&mut self, ctx: &ParsingContext) -> Result<Vec<Expression>, ParseError> {
-        self.next_token(); // Skip the LParen.
-        let mut arguments = Vec::new();
+    fn parse_index_expression() -> InfixParseFn {
+        let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
+            let token = parser.cur_token.take().unwrap();
+            parser.next_token();
+            let index = parser.parse_expression(Precedence::Lowest, ctx)?;
+            parser.expect_peek(Token::RBracket)?;
+            Ok(Expression::IndexExpression(IndexExpression {
+                token,
+                left: Box::new(left),
+                index: Box::new(index),
+            }))
+        };
+        Box::new(f)
+    }
+
+    fn parse_expression_list(
+        &mut self,
+        ctx: &ParsingContext,
+        end: Token,
+    ) -> Result<Vec<Expression>, ParseError> {
+        self.next_token(); // Skip the LParen/LBracket.
+        let mut expressions = Vec::new();
         if self.cur_token == Some(Token::RParen) {
-            return Ok(arguments);
+            return Ok(expressions);
         }
 
-        // Remove at least one parameter.
-        arguments.push(self.parse_expression(Precedence::Lowest, ctx)?);
+        // Remove at least one expression.
+        expressions.push(self.parse_expression(Precedence::Lowest, ctx)?);
 
         while self.peek_token == Some(Token::Comma) {
             self.next_token();
             self.next_token();
-            arguments.push(self.parse_expression(Precedence::Lowest, ctx)?);
+            expressions.push(self.parse_expression(Precedence::Lowest, ctx)?);
         }
 
-        self.expect_peek(Token::RParen)?;
-        Ok(arguments)
+        self.expect_peek(end)?;
+        Ok(expressions)
     }
 
     fn token_precedence(token: &Token, ctx: &ParsingContext) -> Precedence {
@@ -855,6 +893,14 @@ return 993322;
                 "add(a + b + c * d / f + g)",
                 "add((((a + b) + ((c * d) / f)) + g))",
             ),
+            (
+                "a * [1, 2, 3, 4][b * c] * d",
+                "((a * ([1, 2, 3, 4][(b * c)])) * d)",
+            ),
+            (
+                "add(a * b[2], b[1], 2 * [1, 2][1])",
+                "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))",
+            ),
         ];
 
         for tc in tests.iter() {
@@ -1078,5 +1124,47 @@ return 993322;
 
         let expression_statement = check_expression_statement(&statements[0]);
         test_string_literal(&expression_statement.expression, "hello world");
+    }
+
+    #[test]
+    fn test_parse_array_literal() {
+        let input = "[1, 2 * 2, 3 + 3]";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements;
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+
+        let expression_statement = check_expression_statement(&statements[0]);
+        let array_literal = match &expression_statement.expression {
+            Expression::ArrayLiteral(a) => a,
+            _ => panic!("Expression is not an array literal"),
+        };
+
+        assert_eq!(array_literal.elements.len(), 3);
+        test_integer_literal(&array_literal.elements[0], 1);
+        test_infix_expression(&array_literal.elements[1], 2, 2, &Token::Asterisk);
+        test_infix_expression(&array_literal.elements[2], 3, 3, &Token::Plus);
+    }
+
+    #[test]
+    fn test_parse_index_expression() {
+        let input = "myArray[1 + 1]";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements;
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+
+        let expression_statement = check_expression_statement(&statements[0]);
+        let index_expression = match &expression_statement.expression {
+            Expression::IndexExpression(i) => i,
+            _ => panic!("Expression is not an index expression"),
+        };
+
+        test_identifier_expression(&index_expression.left, "myArray");
+        test_infix_expression(&index_expression.index, 1, 1, &Token::Plus);
     }
 }

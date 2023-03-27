@@ -36,6 +36,8 @@ pub enum Token {
     RParen,
     RBrace,
     LBrace,
+    LBracket,
+    RBracket,
 
     // Keywords
     Function,
@@ -93,6 +95,8 @@ impl Display for Token {
             Token::RParen => ")",
             Token::RBrace => "{",
             Token::LBrace => "}",
+            Token::LBracket => "[",
+            Token::RBracket => "]",
             Token::Function => "fn",
             Token::Let => "let",
             Token::If => "if",
