@@ -82,7 +82,7 @@ impl Evaluator {
                     }
                 };
                 let result = if index < 0 || index >= array.elements.len() as i64 {
-                    Rc::new(Object::Null())
+                    Rc::new(Object::Null)
                 } else {
                     Rc::clone(&array.elements[index as usize])
                 };
@@ -155,14 +155,14 @@ impl Evaluator {
         }
         match &expression.alternate {
             Some(s) => self.eval_statements(&s.statements, false, env),
-            None => Ok(Rc::from(Object::Null())),
+            None => Ok(Rc::from(Object::Null)),
         }
     }
 
     fn is_truthy(object: &Object) -> bool {
         match object {
             Object::Boolean(b) => *b,
-            Object::Null() => false,
+            Object::Null => false,
             _ => true,
         }
     }
@@ -254,7 +254,7 @@ impl Evaluator {
             | Object::Array(_) => Rc::from(Object::Boolean(false)),
             Object::Boolean(true) => Rc::from(Object::Boolean(false)),
             Object::Boolean(false) => Rc::from(Object::Boolean(true)),
-            Object::Null() => Rc::from(Object::Boolean(true)),
+            Object::Null => Rc::from(Object::Boolean(true)),
             Object::Return(_) => return res,
         }
     }
@@ -283,7 +283,7 @@ impl Evaluator {
         is_outermost: bool,
         env: &MutableEnvironment,
     ) -> EvalResult {
-        let mut result = Rc::from(Object::Null());
+        let mut result = Rc::from(Object::Null);
         for statement in statements.iter() {
             result = self.eval_statement(statement, env)?;
             if result.is_return() {
@@ -320,7 +320,7 @@ mod tests {
 
         fn is_null(&self) -> bool {
             match self {
-                Object::Null() => true,
+                Object::Null => true,
                 _ => false,
             }
         }
@@ -459,10 +459,10 @@ mod tests {
     fn test_if_else_expression() {
         let tests = [
             ("if (true) { 10 }", Object::Integer(10)),
-            ("if (false) { 10 }", Object::Null()),
+            ("if (false) { 10 }", Object::Null),
             ("if (1) { 10 }", Object::Integer(10)),
             ("if (1 < 2) { 10 }", Object::Integer(10)),
-            ("if (1 > 2) { 10 }", Object::Null()),
+            ("if (1 > 2) { 10 }", Object::Null),
             ("if (1 > 2) { 10 } else { 20 }", Object::Integer(20)),
             ("if (1 < 2) { 10 } else { 20 }", Object::Integer(10)),
         ];
@@ -471,7 +471,7 @@ mod tests {
             let o = test_eval(tc.0).unwrap();
             match tc.1 {
                 Object::Integer(x) => assert_eq!(x, o.get_integer().unwrap()),
-                Object::Null() => assert!(o.is_null()),
+                Object::Null => assert!(o.is_null()),
                 _ => panic!("Equality not implemented"),
             }
         }
@@ -613,8 +613,8 @@ addTwo(2);";
                 "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]",
                 Object::Integer(2),
             ),
-            ("[1, 2, 3][3]", Object::Null()),
-            ("[1, 2, 3][-1]", Object::Null()),
+            ("[1, 2, 3][3]", Object::Null),
+            ("[1, 2, 3][-1]", Object::Null),
         ];
 
         for tc in tests.iter() {
@@ -622,7 +622,7 @@ addTwo(2);";
             let res = test_eval(input).unwrap();
             match &tc.1 {
                 Object::Integer(x) => assert_eq!(*x, res.get_integer().unwrap()),
-                Object::Null() => assert!(matches!(*res, Object::Null())),
+                Object::Null => assert!(matches!(*res, Object::Null)),
                 _ => panic!("Unknown match"),
             };
         }
