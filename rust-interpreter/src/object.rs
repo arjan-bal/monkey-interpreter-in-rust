@@ -85,7 +85,7 @@ pub struct Function {
     pub body: Rc<BlockStatement>,
 }
 
-type BuiltinFunction = Box<dyn Fn(&Vec<RObject>) -> Result<Object, EvalError>>;
+type BuiltinFunction = Box<dyn Fn(&Vec<RObject>) -> Result<RObject, EvalError>>;
 
 pub struct Builtin {
     pub(crate) func: BuiltinFunction,

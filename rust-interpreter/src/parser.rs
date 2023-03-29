@@ -343,7 +343,7 @@ impl ParserInternal {
     ) -> Result<Vec<Expression>, ParseError> {
         self.next_token(); // Skip the LParen/LBracket.
         let mut expressions = Vec::new();
-        if self.cur_token == Some(Token::RParen) {
+        if self.cur_token.as_ref() == Some(&end) {
             return Ok(expressions);
         }
 

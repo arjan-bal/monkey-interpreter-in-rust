@@ -97,7 +97,7 @@ impl Evaluator {
         let function = match function.as_ref() {
             Object::Function(f) => f,
             Object::Builtin(b) => {
-                return Ok(Rc::new((b.func)(&evaluated_args)?));
+                return Ok((b.func)(&evaluated_args)?);
             }
             _ => {
                 return Err(EvalError(format!(
