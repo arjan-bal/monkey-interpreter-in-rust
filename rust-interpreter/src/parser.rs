@@ -17,7 +17,7 @@ use crate::{
 };
 
 type ParseExpressionResult = Result<Expression, ParseError>;
-type PrefixParseFn = Box<dyn Fn(&mut ParserInternal, &ParsingContext) -> ParseExpressionResult>;
+type PrefixParseFn = fn(&mut ParserInternal, &ParsingContext) -> ParseExpressionResult;
 type InfixParseFn =
     Box<dyn Fn(&mut ParserInternal, Expression, &ParsingContext) -> ParseExpressionResult>;
 
@@ -135,36 +135,30 @@ impl ParserInternal {
         };
         p.next_token();
         p.next_token();
-        let mut prefix_fns = Vec::from([
-            (
-                ParserInternal::parse_identifier(),
-                Token::Ident(String::from("")),
-            ),
-            (ParserInternal::parse_integer_literal(), Token::Int(0)),
-            (
-                ParserInternal::parse_string_literal(),
-                Token::String("".to_owned()),
-            ),
-            (ParserInternal::parse_boolean_literal(), Token::True),
-            (ParserInternal::parse_boolean_literal(), Token::False),
-            (
-                ParserInternal::parse_prefix_operator_expressions(),
-                Token::Bang,
-            ),
-            (
-                ParserInternal::parse_prefix_operator_expressions(),
-                Token::Minus,
-            ),
-            (ParserInternal::parse_grouped_expression(), Token::LParen),
-            (ParserInternal::parse_if_expression(), Token::If),
-            (ParserInternal::parse_function_literal(), Token::Function),
-            (ParserInternal::parse_array_literal(), Token::LBracket),
-            (ParserInternal::parse_hash_literal(), Token::LBrace),
-        ]);
-        while !prefix_fns.is_empty() {
-            let (func, token) = prefix_fns.pop().unwrap();
-            ctx.register_prefix(&token.get_representative_token(), func);
-        }
+        ctx.register_prefix(
+            &Token::Ident(String::from("")),
+            ParserInternal::parse_identifier,
+        );
+        ctx.register_prefix(&Token::Int(0), ParserInternal::parse_integer_literal);
+        ctx.register_prefix(
+            &Token::String("".to_owned()),
+            ParserInternal::parse_string_literal,
+        );
+        ctx.register_prefix(&Token::True, ParserInternal::parse_boolean_literal);
+        ctx.register_prefix(&Token::False, ParserInternal::parse_boolean_literal);
+        ctx.register_prefix(
+            &Token::Bang,
+            ParserInternal::parse_prefix_operator_expressions,
+        );
+        ctx.register_prefix(
+            &Token::Minus,
+            ParserInternal::parse_prefix_operator_expressions,
+        );
+        ctx.register_prefix(&Token::LParen, ParserInternal::parse_grouped_expression);
+        ctx.register_prefix(&Token::If, ParserInternal::parse_if_expression);
+        ctx.register_prefix(&Token::Function, ParserInternal::parse_function_literal);
+        ctx.register_prefix(&Token::LBracket, ParserInternal::parse_array_literal);
+        ctx.register_prefix(&Token::LBrace, ParserInternal::parse_hash_literal);
 
         let mut infix_fns = Vec::from([
             (ParserInternal::parse_infix_expressions(), Token::Plus),
@@ -185,124 +179,94 @@ impl ParserInternal {
         p
     }
 
-    fn parse_identifier() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
-            let ident = parser.cur_token.as_ref().unwrap().clone();
-            Ok(Expression::Identifier(Identifier::new(ident)))
-        };
-        Box::new(f)
+    fn parse_identifier(&mut self, _: &ParsingContext) -> ParseExpressionResult {
+        let ident = self.cur_token.as_ref().unwrap().clone();
+        Ok(Expression::Identifier(Identifier::new(ident)))
     }
 
-    fn parse_integer_literal() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
-            let integer_literal = parser.cur_token.as_ref().unwrap().clone();
-            Ok(Expression::IntegerLiteral(IntegerLiteral::new(
-                integer_literal,
-            )))
-        };
-        Box::new(f)
+    fn parse_integer_literal(&mut self, _: &ParsingContext) -> ParseExpressionResult {
+        let integer_literal = self.cur_token.as_ref().unwrap().clone();
+        Ok(Expression::IntegerLiteral(IntegerLiteral::new(
+            integer_literal,
+        )))
     }
 
-    fn parse_boolean_literal() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
-            let boolean_literal = parser.cur_token.as_ref().unwrap().clone();
-            Ok(Expression::Boolean(Boolean::new(boolean_literal)))
-        };
-        Box::new(f)
+    fn parse_boolean_literal(&mut self, _: &ParsingContext) -> ParseExpressionResult {
+        let boolean_literal = self.cur_token.as_ref().unwrap().clone();
+        Ok(Expression::Boolean(Boolean::new(boolean_literal)))
     }
 
-    fn parse_string_literal() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, _: &ParsingContext| {
-            let string_literal = parser.cur_token.as_ref().unwrap().clone();
-            Ok(Expression::StringLiteral(StringLiteral::new(
-                string_literal,
-            )))
-        };
-        Box::new(f)
+    fn parse_string_literal(&mut self, _: &ParsingContext) -> ParseExpressionResult {
+        let string_literal = self.cur_token.as_ref().unwrap().clone();
+        Ok(Expression::StringLiteral(StringLiteral::new(
+            string_literal,
+        )))
     }
 
-    fn parse_prefix_operator_expressions() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
-            let token = parser.cur_token.take().unwrap();
-            parser.next_token();
-            let right_expression = parser.parse_expression(&Precedence::Prefix, ctx)?;
-            Ok(Expression::PrefixExpression(PrefixExpression {
-                token,
-                right: Box::new(right_expression),
-            }))
-        };
-        Box::new(f)
+    fn parse_prefix_operator_expressions(&mut self, ctx: &ParsingContext) -> ParseExpressionResult {
+        let token = self.cur_token.take().unwrap();
+        self.next_token();
+        let right_expression = self.parse_expression(&Precedence::Prefix, ctx)?;
+        Ok(Expression::PrefixExpression(PrefixExpression {
+            token,
+            right: Box::new(right_expression),
+        }))
     }
 
-    fn parse_grouped_expression() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
-            parser.next_token();
-            let expression = parser.parse_expression(&Precedence::Lowest, ctx)?;
-            parser.expect_peek(Token::RParen)?;
-            Ok(expression)
-        };
-        Box::new(f)
+    fn parse_grouped_expression(&mut self, ctx: &ParsingContext) -> ParseExpressionResult {
+        self.next_token();
+        let expression = self.parse_expression(&Precedence::Lowest, ctx)?;
+        self.expect_peek(Token::RParen)?;
+        Ok(expression)
     }
 
-    fn parse_if_expression() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
-            let token = parser.cur_token.take().unwrap();
-            parser.expect_peek(Token::LParen)?;
-            parser.next_token();
-            let condition = parser.parse_expression(&Precedence::Lowest, ctx)?;
-            parser.expect_peek(Token::RParen)?;
-            parser.expect_peek(Token::LBrace)?;
-            let consequence = parser.parse_block_statement(ctx)?;
-            let mut alternate = None;
+    fn parse_if_expression(&mut self, ctx: &ParsingContext) -> ParseExpressionResult {
+        let token = self.cur_token.take().unwrap();
+        self.expect_peek(Token::LParen)?;
+        self.next_token();
+        let condition = self.parse_expression(&Precedence::Lowest, ctx)?;
+        self.expect_peek(Token::RParen)?;
+        self.expect_peek(Token::LBrace)?;
+        let consequence = self.parse_block_statement(ctx)?;
+        let mut alternate = None;
 
-            if parser.peek_token == Some(Token::Else) {
-                parser.next_token();
-                parser.expect_peek(Token::LBrace)?;
-                alternate = Some(parser.parse_block_statement(ctx)?);
-            }
+        if self.peek_token == Some(Token::Else) {
+            self.next_token();
+            self.expect_peek(Token::LBrace)?;
+            alternate = Some(self.parse_block_statement(ctx)?);
+        }
 
-            Ok(Expression::IfExpression(IfExpression {
-                token,
-                condition: Box::new(condition),
-                consequence,
-                alternate,
-            }))
-        };
-        Box::new(f)
+        Ok(Expression::IfExpression(IfExpression {
+            token,
+            condition: Box::new(condition),
+            consequence,
+            alternate,
+        }))
     }
 
-    fn parse_function_literal() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
-            let token = parser.cur_token.take().unwrap();
-            parser.expect_peek(Token::LParen)?;
-            let parameters = parser.parse_parameters()?;
-            parser.expect_peek(Token::LBrace)?;
-            let body = parser.parse_block_statement(ctx)?;
-            Ok(Expression::FunctionLiteral(FunctionLiteral {
-                token,
-                parameters: Rc::new(parameters),
-                body: Rc::new(body),
-            }))
-        };
-        Box::new(f)
+    fn parse_function_literal(&mut self, ctx: &ParsingContext) -> ParseExpressionResult {
+        let token = self.cur_token.take().unwrap();
+        self.expect_peek(Token::LParen)?;
+        let parameters = self.parse_parameters()?;
+        self.expect_peek(Token::LBrace)?;
+        let body = self.parse_block_statement(ctx)?;
+        Ok(Expression::FunctionLiteral(FunctionLiteral {
+            token,
+            parameters: Rc::new(parameters),
+            body: Rc::new(body),
+        }))
     }
 
-    fn parse_array_literal() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
-            let token = parser.cur_token.take().unwrap();
-            let elements = parser.parse_list(ctx, Token::RBracket, Self::parse_expression)?;
-            Ok(Expression::ArrayLiteral(ArrayLiteral { token, elements }))
-        };
-        Box::new(f)
+    fn parse_array_literal(&mut self, ctx: &ParsingContext) -> ParseExpressionResult {
+        let token = self.cur_token.take().unwrap();
+        let elements = self.parse_list(ctx, Token::RBracket, Self::parse_expression)?;
+        Ok(Expression::ArrayLiteral(ArrayLiteral { token, elements }))
     }
 
-    fn parse_hash_literal() -> PrefixParseFn {
-        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
-            let token = parser.cur_token.take().unwrap();
-            let elements = parser.parse_list(ctx, Token::RBrace, Self::parse_expression_pair)?;
-            Ok(Expression::HashLiteral(HashLiteral { token, elements }))
-        };
-        Box::new(f)
+    fn parse_hash_literal(&mut self, ctx: &ParsingContext) -> ParseExpressionResult {
+        let token = self.cur_token.take().unwrap();
+        let elements = self.parse_list(ctx, Token::RBrace, Self::parse_expression_pair)?;
+        Ok(Expression::HashLiteral(HashLiteral { token, elements }))
     }
 
     fn parse_infix_expressions() -> InfixParseFn {
