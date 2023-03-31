@@ -8,7 +8,7 @@ use std::{
 use crate::{
     ast::{
         ArrayLiteral, BlockStatement, Boolean, CallExpression, Expression, ExpressionStatement,
-        FunctionLiteral, Identifier, IfExpression, IndexExpression, InfixExpression,
+        FunctionLiteral, HashLiteral, Identifier, IfExpression, IndexExpression, InfixExpression,
         IntegerLiteral, LetStatement, PrefixExpression, Program, ReturnStatement, Statement,
         StringLiteral,
     },
@@ -159,6 +159,7 @@ impl ParserInternal {
             (ParserInternal::parse_if_expression(), Token::If),
             (ParserInternal::parse_function_literal(), Token::Function),
             (ParserInternal::parse_array_literal(), Token::LBracket),
+            (ParserInternal::parse_hash_literal(), Token::LBrace),
         ]);
         while !prefix_fns.is_empty() {
             let (func, token) = prefix_fns.pop().unwrap();
@@ -224,7 +225,7 @@ impl ParserInternal {
         let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
             let token = parser.cur_token.take().unwrap();
             parser.next_token();
-            let right_expression = parser.parse_expression(Precedence::Prefix, ctx)?;
+            let right_expression = parser.parse_expression(&Precedence::Prefix, ctx)?;
             Ok(Expression::PrefixExpression(PrefixExpression {
                 token,
                 right: Box::new(right_expression),
@@ -236,7 +237,7 @@ impl ParserInternal {
     fn parse_grouped_expression() -> PrefixParseFn {
         let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
             parser.next_token();
-            let expression = parser.parse_expression(Precedence::Lowest, ctx)?;
+            let expression = parser.parse_expression(&Precedence::Lowest, ctx)?;
             parser.expect_peek(Token::RParen)?;
             Ok(expression)
         };
@@ -248,7 +249,7 @@ impl ParserInternal {
             let token = parser.cur_token.take().unwrap();
             parser.expect_peek(Token::LParen)?;
             parser.next_token();
-            let condition = parser.parse_expression(Precedence::Lowest, ctx)?;
+            let condition = parser.parse_expression(&Precedence::Lowest, ctx)?;
             parser.expect_peek(Token::RParen)?;
             parser.expect_peek(Token::LBrace)?;
             let consequence = parser.parse_block_statement(ctx)?;
@@ -289,15 +290,24 @@ impl ParserInternal {
     fn parse_array_literal() -> PrefixParseFn {
         let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
             let token = parser.cur_token.take().unwrap();
-            let elements = parser.parse_expression_list(ctx, Token::RBracket)?;
+            let elements = parser.parse_list(ctx, Token::RBracket, Self::parse_expression)?;
             Ok(Expression::ArrayLiteral(ArrayLiteral { token, elements }))
+        };
+        Box::new(f)
+    }
+
+    fn parse_hash_literal() -> PrefixParseFn {
+        let f = |parser: &mut ParserInternal, ctx: &ParsingContext| {
+            let token = parser.cur_token.take().unwrap();
+            let elements = parser.parse_list(ctx, Token::RBrace, Self::parse_expression_pair)?;
+            Ok(Expression::HashLiteral(HashLiteral { token, elements }))
         };
         Box::new(f)
     }
 
     fn parse_infix_expressions() -> InfixParseFn {
         let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
-            let precedence = parser.cur_precedence(ctx);
+            let precedence = &parser.cur_precedence(ctx);
             let operator = parser.cur_token.take().unwrap();
             parser.next_token();
             let right = parser.parse_expression(precedence, ctx)?;
@@ -311,7 +321,7 @@ impl ParserInternal {
     fn parse_call_expression() -> InfixParseFn {
         let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
             let token = parser.cur_token.take().unwrap();
-            let arguments = parser.parse_expression_list(ctx, Token::RParen)?;
+            let arguments = parser.parse_list(ctx, Token::RParen, Self::parse_expression)?;
             Ok(Expression::CallExpression(CallExpression {
                 token,
                 function: Box::new(left),
@@ -325,7 +335,7 @@ impl ParserInternal {
         let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
             let token = parser.cur_token.take().unwrap();
             parser.next_token();
-            let index = parser.parse_expression(Precedence::Lowest, ctx)?;
+            let index = parser.parse_expression(&Precedence::Lowest, ctx)?;
             parser.expect_peek(Token::RBracket)?;
             Ok(Expression::IndexExpression(IndexExpression {
                 token,
@@ -336,28 +346,43 @@ impl ParserInternal {
         Box::new(f)
     }
 
-    fn parse_expression_list(
+    fn parse_expression_pair(
+        &mut self,
+        precedence: &Precedence,
+        ctx: &ParsingContext,
+    ) -> Result<(Expression, Expression), ParseError> {
+        let first = self.parse_expression(precedence, ctx)?;
+        self.expect_peek(Token::Colon)?;
+        self.next_token();
+        Ok((first, self.parse_expression(precedence, ctx)?))
+    }
+
+    fn parse_list<T, F>(
         &mut self,
         ctx: &ParsingContext,
         end: Token,
-    ) -> Result<Vec<Expression>, ParseError> {
+        parse_fn: F,
+    ) -> Result<Vec<T>, ParseError>
+    where
+        F: Fn(&mut ParserInternal, &Precedence, &ParsingContext) -> Result<T, ParseError>,
+    {
         self.next_token(); // Skip the LParen/LBracket.
-        let mut expressions = Vec::new();
+        let mut result = Vec::new();
         if self.cur_token.as_ref() == Some(&end) {
-            return Ok(expressions);
+            return Ok(result);
         }
 
         // Remove at least one expression.
-        expressions.push(self.parse_expression(Precedence::Lowest, ctx)?);
+        result.push(parse_fn(self, &Precedence::Lowest, ctx)?);
 
         while self.peek_token == Some(Token::Comma) {
             self.next_token();
             self.next_token();
-            expressions.push(self.parse_expression(Precedence::Lowest, ctx)?);
+            result.push(parse_fn(self, &Precedence::Lowest, ctx)?);
         }
 
         self.expect_peek(end)?;
-        Ok(expressions)
+        Ok(result)
     }
 
     fn token_precedence(token: &Token, ctx: &ParsingContext) -> Precedence {
@@ -376,7 +401,7 @@ impl ParserInternal {
 
     fn parse_expression(
         &mut self,
-        precedence: Precedence,
+        precedence: &Precedence,
         ctx: &ParsingContext,
     ) -> ParseExpressionResult {
         let prefix_fn = ctx
@@ -387,7 +412,7 @@ impl ParserInternal {
                 self.cur_token
             )))?;
         let mut left = prefix_fn(self, ctx)?;
-        while self.peek_token != Some(Token::Semicolon) && precedence < self.peek_precedence(ctx) {
+        while self.peek_token != Some(Token::Semicolon) && precedence < &self.peek_precedence(ctx) {
             let f = match ctx.infix_parse_fns.get(self.peek_token.as_ref().unwrap()) {
                 Some(f) => f,
                 None => return Ok(left),
@@ -409,7 +434,7 @@ impl ParserInternal {
                 "Found empty cur token while parsing expression"
             )))?
             .clone();
-        let expression = self.parse_expression(Precedence::Lowest, ctx)?;
+        let expression = self.parse_expression(&Precedence::Lowest, ctx)?;
         if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
         }
@@ -430,7 +455,7 @@ impl ParserInternal {
         let ident_token = self.get_ident_token()?;
         self.expect_peek(Token::Assign)?;
         self.next_token(); // cur is not assign.
-        let value = self.parse_expression(Precedence::Lowest, ctx)?;
+        let value = self.parse_expression(&Precedence::Lowest, ctx)?;
         // Don't remove the semicolon. It's removed in parse_program().
         if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
@@ -445,7 +470,7 @@ impl ParserInternal {
     fn parse_return_statement(&mut self, ctx: &ParsingContext) -> Result<Statement, ParseError> {
         let token = self.cur_token.take().unwrap();
         self.next_token();
-        let return_value = self.parse_expression(Precedence::Lowest, ctx)?;
+        let return_value = self.parse_expression(&Precedence::Lowest, ctx)?;
         // Don't remove the semicolon. It's removed in parse_program().
         if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
@@ -1166,5 +1191,49 @@ return 993322;
 
         test_identifier_expression(&index_expression.left, "myArray");
         test_infix_expression(&index_expression.index, 1, 1, &Token::Plus);
+    }
+
+    #[test]
+    fn test_parse_hash_literal() {
+        let input = r#"{"one": 1, "two": 2, "three": 3}"#;
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements;
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+
+        let expression_statement = check_expression_statement(&statements[0]);
+        let hash_literal = match &expression_statement.expression {
+            Expression::HashLiteral(h) => h,
+            _ => panic!("Expression is not an hash literal"),
+        };
+
+        let expected = [("one", 1), ("two", 2), ("three", 3)];
+        assert_eq!(expected.len(), hash_literal.elements.len());
+
+        for (idx, tc) in expected.iter().enumerate() {
+            test_string_literal(&hash_literal.elements[idx].0, tc.0);
+            test_integer_literal(&hash_literal.elements[idx].1, tc.1);
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_hash_literal() {
+        let input = "{}";
+        let l = Lexer::new(input);
+        let mut p = Parser::new(l);
+
+        let program = check_parse_errors(p.parse_program());
+        let statements = program.statements;
+        assert_eq!(statements.len(), 1, "program doesn't contain 1 statement");
+
+        let expression_statement = check_expression_statement(&statements[0]);
+        let hash_literal = match &expression_statement.expression {
+            Expression::HashLiteral(h) => h,
+            _ => panic!("Expression is not an hash literal"),
+        };
+
+        assert!(hash_literal.elements.is_empty());
     }
 }

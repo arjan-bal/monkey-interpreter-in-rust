@@ -17,7 +17,7 @@ pub fn get_builtins() -> HashMap<&'static str, RObject> {
                         Object::String(s) => s.len(),
                         Object::Array(a) => a.elements.len(),
                         _ => {
-                            return Err(incorrect_type_error("list", arg));
+                            return Err(incorrect_type_error("len", arg));
                         }
                     };
                     Ok(Rc::new(Object::Integer(len as i64)))

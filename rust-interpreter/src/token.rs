@@ -31,6 +31,7 @@ pub enum Token {
     // Delimiters
     Comma,
     Semicolon,
+    Colon,
 
     LParen,
     RParen,
@@ -102,6 +103,7 @@ impl Display for Token {
             Token::If => "if",
             Token::Else => "else",
             Token::Return => "return",
+            Token::Colon => ":",
             Token::String(s) => s,
         };
         write!(f, "{}", res)

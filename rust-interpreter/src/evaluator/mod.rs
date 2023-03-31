@@ -57,6 +57,7 @@ impl Evaluator {
             Expression::ArrayLiteral(a) => Ok(Rc::new(Object::Array(Array {
                 elements: self.eval_expressions(&a.elements, env)?,
             }))),
+            Expression::HashLiteral(_) => todo!(),
             Expression::IndexExpression(e) => {
                 // ensure left is an Array object after evaluation.
                 let array = self.eval_expression(&e.left, env)?;

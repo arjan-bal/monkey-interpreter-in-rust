@@ -5,38 +5,38 @@ use std::{
 
 use crate::token::Token;
 
-pub enum Expression {
-    Identifier(Identifier),
-    IntegerLiteral(IntegerLiteral),
-    Boolean(Boolean),
-    StringLiteral(StringLiteral),
-    ArrayLiteral(ArrayLiteral),
-    CallExpression(CallExpression),
-    IfExpression(IfExpression),
-    FunctionLiteral(FunctionLiteral),
-    InfixExpression(InfixExpression),
-    PrefixExpression(PrefixExpression),
-    IndexExpression(IndexExpression),
+macro_rules! expressions {
+    ( $($type:ident),* ) => {
+      pub enum Expression {
+        $( $type($type),)*
+      }
+
+      impl Display for Expression {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let res = match &self {
+                $( Expression::$type(x) => x.to_string(),)*
+            };
+            f.write_str(res.as_str())
+        }
+      }
+    };
 }
 
-impl Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let res = match &self {
-            Expression::Identifier(x) => x.to_string(),
-            Expression::IntegerLiteral(x) => x.to_string(),
-            Expression::StringLiteral(x) => x.to_string(),
-            Expression::Boolean(x) => x.to_string(),
-            Expression::CallExpression(x) => x.to_string(),
-            Expression::IfExpression(x) => x.to_string(),
-            Expression::FunctionLiteral(x) => x.to_string(),
-            Expression::InfixExpression(x) => x.to_string(),
-            Expression::PrefixExpression(x) => x.to_string(),
-            Expression::ArrayLiteral(x) => x.to_string(),
-            Expression::IndexExpression(x) => x.to_string(),
-        };
-        f.write_str(res.as_str())
-    }
-}
+expressions!(
+    Identifier,
+    IntegerLiteral,
+    Boolean,
+    StringLiteral,
+    ArrayLiteral,
+    HashLiteral,
+    CallExpression,
+    IfExpression,
+    FunctionLiteral,
+    InfixExpression,
+    PrefixExpression,
+    IndexExpression
+);
+
 
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -165,6 +165,25 @@ impl Display for ArrayLiteral {
     }
 }
 
+pub struct HashLiteral {
+    pub token: Token,
+    pub elements: Vec<(Expression, Expression)>,
+}
+
+impl Display for HashLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{{{}}}",
+            self.elements
+                .iter()
+                .map(|e| format!("{}: {}", e.0.to_string(), e.1.to_string()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
 pub struct IndexExpression {
     pub token: Token,
     pub left: Box<Expression>,
@@ -173,7 +192,7 @@ pub struct IndexExpression {
 
 impl Display for IndexExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-       write!(f, "({}[{}])", self.left, self.index)
+        write!(f, "({}[{}])", self.left, self.index)
     }
 }
 
