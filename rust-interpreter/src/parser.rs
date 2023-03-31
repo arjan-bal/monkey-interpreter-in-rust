@@ -18,8 +18,7 @@ use crate::{
 
 type ParseExpressionResult = Result<Expression, ParseError>;
 type PrefixParseFn = fn(&mut ParserInternal, &ParsingContext) -> ParseExpressionResult;
-type InfixParseFn =
-    Box<dyn Fn(&mut ParserInternal, Expression, &ParsingContext) -> ParseExpressionResult>;
+type InfixParseFn = fn(&mut ParserInternal, Expression, &ParsingContext) -> ParseExpressionResult;
 
 struct ParserInternal {
     lexer: Lexer,
@@ -59,7 +58,7 @@ impl ParsingContext {
         self.prefix_parse_fns.insert(token.clone(), func);
     }
 
-    fn register_infix(&mut self, token: &Token, func: InfixParseFn) {
+    fn register_infix(&mut self, func: InfixParseFn, token: &Token) {
         self.infix_parse_fns.insert(token.clone(), func);
     }
 
@@ -160,22 +159,16 @@ impl ParserInternal {
         ctx.register_prefix(&Token::LBracket, ParserInternal::parse_array_literal);
         ctx.register_prefix(&Token::LBrace, ParserInternal::parse_hash_literal);
 
-        let mut infix_fns = Vec::from([
-            (ParserInternal::parse_infix_expressions(), Token::Plus),
-            (ParserInternal::parse_infix_expressions(), Token::Minus),
-            (ParserInternal::parse_infix_expressions(), Token::Slash),
-            (ParserInternal::parse_infix_expressions(), Token::Asterisk),
-            (ParserInternal::parse_infix_expressions(), Token::EQ),
-            (ParserInternal::parse_infix_expressions(), Token::NotEq),
-            (ParserInternal::parse_infix_expressions(), Token::LT),
-            (ParserInternal::parse_infix_expressions(), Token::GT),
-            (ParserInternal::parse_call_expression(), Token::LParen),
-            (ParserInternal::parse_index_expression(), Token::LBracket),
-        ]);
-        while !infix_fns.is_empty() {
-            let (func, token) = infix_fns.pop().unwrap();
-            ctx.register_infix(&token.get_representative_token(), func);
-        }
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::Plus);
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::Minus);
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::Slash);
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::Asterisk);
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::EQ);
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::NotEq);
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::LT);
+        ctx.register_infix(ParserInternal::parse_infix_expressions, &Token::GT);
+        ctx.register_infix(ParserInternal::parse_call_expression, &Token::LParen);
+        ctx.register_infix(ParserInternal::parse_index_expression, &Token::LBracket);
         p
     }
 
@@ -269,45 +262,48 @@ impl ParserInternal {
         Ok(Expression::HashLiteral(HashLiteral { token, elements }))
     }
 
-    fn parse_infix_expressions() -> InfixParseFn {
-        let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
-            let precedence = &parser.cur_precedence(ctx);
-            let operator = parser.cur_token.take().unwrap();
-            parser.next_token();
-            let right = parser.parse_expression(precedence, ctx)?;
-            Ok(Expression::InfixExpression(InfixExpression::new(
-                operator, left, right,
-            )))
-        };
-        Box::new(f)
+    fn parse_infix_expressions(
+        &mut self,
+        left: Expression,
+        ctx: &ParsingContext,
+    ) -> ParseExpressionResult {
+        let precedence = &self.cur_precedence(ctx);
+        let operator = self.cur_token.take().unwrap();
+        self.next_token();
+        let right = self.parse_expression(precedence, ctx)?;
+        Ok(Expression::InfixExpression(InfixExpression::new(
+            operator, left, right,
+        )))
     }
 
-    fn parse_call_expression() -> InfixParseFn {
-        let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
-            let token = parser.cur_token.take().unwrap();
-            let arguments = parser.parse_list(ctx, Token::RParen, Self::parse_expression)?;
-            Ok(Expression::CallExpression(CallExpression {
-                token,
-                function: Box::new(left),
-                arguments,
-            }))
-        };
-        Box::new(f)
+    fn parse_call_expression(
+        &mut self,
+        left: Expression,
+        ctx: &ParsingContext,
+    ) -> ParseExpressionResult {
+        let token = self.cur_token.take().unwrap();
+        let arguments = self.parse_list(ctx, Token::RParen, Self::parse_expression)?;
+        Ok(Expression::CallExpression(CallExpression {
+            token,
+            function: Box::new(left),
+            arguments,
+        }))
     }
 
-    fn parse_index_expression() -> InfixParseFn {
-        let f = |parser: &mut ParserInternal, left: Expression, ctx: &ParsingContext| {
-            let token = parser.cur_token.take().unwrap();
-            parser.next_token();
-            let index = parser.parse_expression(&Precedence::Lowest, ctx)?;
-            parser.expect_peek(Token::RBracket)?;
-            Ok(Expression::IndexExpression(IndexExpression {
-                token,
-                left: Box::new(left),
-                index: Box::new(index),
-            }))
-        };
-        Box::new(f)
+    fn parse_index_expression(
+        &mut self,
+        left: Expression,
+        ctx: &ParsingContext,
+    ) -> ParseExpressionResult {
+        let token = self.cur_token.take().unwrap();
+        self.next_token();
+        let index = self.parse_expression(&Precedence::Lowest, ctx)?;
+        self.expect_peek(Token::RBracket)?;
+        Ok(Expression::IndexExpression(IndexExpression {
+            token,
+            left: Box::new(left),
+            index: Box::new(index),
+        }))
     }
 
     fn parse_expression_pair(
