@@ -2,7 +2,7 @@
 name = "monkeyinterpreter"
 license = "MIT OR Apache-2.0"
 description = "An interpreter written in Rust for the monkey programming language described in the book 'Writing An Interpreter In Go' (https://interpreterbook.com/)."
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
