@@ -89,14 +89,6 @@ impl Object {
             None
         }
     }
-
-    pub fn as_hash(&self) -> Option<&Hash> {
-        if let Self::Hash(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
 }
 
 pub struct Function {

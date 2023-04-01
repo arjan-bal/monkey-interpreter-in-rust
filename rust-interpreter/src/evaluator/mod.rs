@@ -70,37 +70,39 @@ impl Evaluator {
                 Ok(Rc::new(Object::Hash(Hash::new(pairs)?)))
             }
             Expression::IndexExpression(e) => {
-                // ensure left is an Array object after evaluation.
-                let array = self.eval_expression(&e.left, env)?;
-                let array = match &*array {
-                    Object::Array(a) => a,
-                    _ => {
-                        return Err(EvalError(format!(
-                            "Can't index into non-array type: {}",
-                            array.inspect()
-                        )))
-                    }
-                };
-
+                let collection = self.eval_expression(&e.left, env)?;
                 // Ensure index is an Integer object after evaluation.
                 let index = self.eval_expression(&e.index, env)?;
-                let index = match &*index {
-                    Object::Integer(i) => *i,
+                match &*collection {
+                    Object::Array(a) => Self::evaluate_array_index_expression(a, index),
+                    Object::Hash(h) => h.get(index),
                     _ => {
                         return Err(EvalError(format!(
-                            "Can't use non-integer type as index: {}",
-                            index.inspect()
+                            "Can't index into object type: {}",
+                            collection.inspect()
                         )))
                     }
-                };
-                let result = if index < 0 || index >= array.elements.len() as i64 {
-                    Rc::new(Object::Null)
-                } else {
-                    Rc::clone(&array.elements[index as usize])
-                };
-                Ok(result)
+                }
             }
         }
+    }
+
+    fn evaluate_array_index_expression(array: &Array, index: RObject) -> EvalResult {
+        let index = match &*index {
+            Object::Integer(i) => *i,
+            _ => {
+                return Err(EvalError(format!(
+                    "Can't use non-integer type as index: {}",
+                    index.inspect()
+                )))
+            }
+        };
+        let result = if index < 0 || index >= array.elements.len() as i64 {
+            Rc::new(Object::Null)
+        } else {
+            Rc::clone(&array.elements[index as usize])
+        };
+        Ok(result)
     }
 
     fn eval_call_expression(&self, exp: &CallExpression, env: &MutableEnvironment) -> EvalResult {
@@ -317,7 +319,7 @@ mod tests {
 
     use crate::{
         lexer::Lexer,
-        object::{Environment, Object},
+        object::{Environment, Hash, Object},
         parser::Parser,
     };
 
@@ -335,6 +337,14 @@ mod tests {
             match self {
                 Object::Null => true,
                 _ => false,
+            }
+        }
+
+        fn as_hash(&self) -> Option<&Hash> {
+            if let Self::Hash(v) = self {
+                Some(v)
+            } else {
+                None
             }
         }
     }
@@ -628,6 +638,29 @@ addTwo(2);";
             ),
             ("[1, 2, 3][3]", Object::Null),
             ("[1, 2, 3][-1]", Object::Null),
+        ];
+
+        for tc in tests.iter() {
+            let input = tc.0;
+            let res = test_eval(input).unwrap();
+            match &tc.1 {
+                Object::Integer(x) => assert_eq!(*x, res.get_integer().unwrap()),
+                Object::Null => assert!(matches!(*res, Object::Null)),
+                _ => panic!("Unknown match"),
+            };
+        }
+    }
+
+    #[test]
+    fn test_hash_index_expressions() {
+        let tests = [
+            (r#"{"foo": 5}["foo"]"#, Object::Integer(5)),
+            (r#"{"foo": 5}["bar"]"#, Object::Null),
+            (r#"let key = "foo"; {"foo": 5}[key]"#, Object::Integer(5)),
+            (r#"{}["foo"]"#, Object::Null),
+            (r#"{5: 5}[5]"#, Object::Integer(5)),
+            (r#"{true: 5}[true]"#, Object::Integer(5)),
+            (r#"{false: 5}[false]"#, Object::Integer(5)),
         ];
 
         for tc in tests.iter() {
