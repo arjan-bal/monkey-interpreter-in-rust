@@ -119,7 +119,7 @@ impl Display for ParseErrors {
             self.0
                 .iter()
                 .map(|e| e.0.to_string())
-                .collect::<Vec<String>>()
+                .collect::<Vec<_>>()
                 .join("\n")
         )
     }

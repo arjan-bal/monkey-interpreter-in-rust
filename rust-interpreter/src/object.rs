@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::{
     ast::{BlockStatement, Identifier},
@@ -17,6 +17,7 @@ pub enum Object {
     Function(Function),
     Builtin(Builtin),
     Array(Array),
+    Hash(Hash),
 }
 
 impl Object {
@@ -39,6 +40,16 @@ impl Object {
                         .join(", ")
                 )
             }
+            Object::Hash(h) => {
+                format!(
+                    "{{{}}}",
+                    h.elements
+                        .iter()
+                        .map(|(key, value)| format!("{}: {}", key.to_string(), value.inspect()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
         }
     }
 
@@ -52,6 +63,7 @@ impl Object {
             Object::Function(_) => "FUNCTION",
             Object::Builtin(_) => "BUILTIN",
             Object::Array(_) => "ARRAY",
+            Object::Hash(_) => "HASH",
         }
         .to_string()
     }
@@ -72,6 +84,14 @@ impl Object {
 
     pub fn as_string(&self) -> Option<&String> {
         if let Self::String(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_hash(&self) -> Option<&Hash> {
+        if let Self::Hash(v) = self {
             Some(v)
         } else {
             None
@@ -106,6 +126,70 @@ impl Function {
 
 pub struct Array {
     pub elements: Vec<RObject>,
+}
+
+pub struct Hash {
+    elements: HashMap<HashKey, RObject>,
+}
+
+impl Hash {
+    pub fn new(pairs: Vec<(RObject, RObject)>) -> Result<Hash, EvalError> {
+        let elements: Result<HashMap<_, _>, _> = pairs
+            .iter()
+            .map(|(k, v)| {
+                let k = Self::get_key(Rc::clone(k))?;
+                Ok((k, Rc::clone(v)))
+            })
+            .collect();
+        Ok(Hash {
+            elements: elements?,
+        })
+    }
+
+    pub fn get(&self, key: RObject) -> Result<RObject, EvalError> {
+        let key = Self::get_key(key)?;
+        let res = match self.elements.get(&key) {
+            Some(o) => Rc::clone(o),
+            None => Rc::new(Object::Null),
+        };
+        Ok(res)
+    }
+
+    fn get_key(object: RObject) -> Result<HashKey, EvalError> {
+        let ret = match *Rc::clone(&object) {
+            Object::Boolean(b) => HashKey::Boolean(b),
+            Object::Integer(i) => HashKey::Integer(i),
+            Object::String(_) => HashKey::String(object.as_string().unwrap().clone()),
+            _ => {
+                return Err(EvalError(format!(
+                    "Un-hashable type {} used to index hash map.",
+                    object.inspect()
+                )))
+            }
+        };
+        Ok(ret)
+    }
+}
+
+#[derive(Hash, PartialEq, Eq)]
+pub enum HashKey {
+    Integer(i64),
+    Boolean(bool),
+    String(String),
+}
+
+impl Display for HashKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                HashKey::Boolean(b) => Object::Boolean(*b).inspect(),
+                HashKey::Integer(i) => Object::Integer(*i).inspect(),
+                HashKey::String(s) => Object::String(s.clone()).inspect(),
+            }
+        )
+    }
 }
 
 pub struct Environment {

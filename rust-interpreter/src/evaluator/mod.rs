@@ -3,7 +3,7 @@ use crate::{
         CallExpression, Expression, FunctionLiteral, IfExpression, PrefixExpression, Program,
         Statement,
     },
-    object::{Array, Environment, Function, MutableEnvironment, Object, RObject},
+    object::{Array, Environment, Function, Hash, MutableEnvironment, Object, RObject},
     token::Token,
 };
 use std::collections::HashMap;
@@ -57,7 +57,18 @@ impl Evaluator {
             Expression::ArrayLiteral(a) => Ok(Rc::new(Object::Array(Array {
                 elements: self.eval_expressions(&a.elements, env)?,
             }))),
-            Expression::HashLiteral(_) => todo!(),
+            Expression::HashLiteral(h) => {
+                let pairs: Result<Vec<_>, _> = h
+                    .elements
+                    .iter()
+                    .map(|(k, v)| {
+                        let (k, v) = (self.eval_expression(k, env)?, self.eval_expression(v, env)?);
+                        Ok((k, v))
+                    })
+                    .collect();
+                let pairs = pairs?;
+                Ok(Rc::new(Object::Hash(Hash::new(pairs)?)))
+            }
             Expression::IndexExpression(e) => {
                 // ensure left is an Array object after evaluation.
                 let array = self.eval_expression(&e.left, env)?;
@@ -252,7 +263,8 @@ impl Evaluator {
             | Object::String(_)
             | Object::Function(_)
             | Object::Builtin(_)
-            | Object::Array(_) => Rc::from(Object::Boolean(false)),
+            | Object::Array(_)
+            | Object::Hash(_) => Rc::from(Object::Boolean(false)),
             Object::Boolean(true) => Rc::from(Object::Boolean(false)),
             Object::Boolean(false) => Rc::from(Object::Boolean(true)),
             Object::Null => Rc::from(Object::Boolean(true)),
@@ -626,6 +638,37 @@ addTwo(2);";
                 Object::Null => assert!(matches!(*res, Object::Null)),
                 _ => panic!("Unknown match"),
             };
+        }
+    }
+
+    #[test]
+    fn test_eval_hash_literal() {
+        let input = r#"let two = "two";
+        {
+            "one": 10 - 9,
+            two: 1 + 1,
+            "thr" + "ee": 6 / 2,
+            4: 4,
+            true: 5,
+            false: 6
+        }"#;
+        let binding = test_eval(input).unwrap();
+        let res = binding.as_hash().unwrap();
+
+        let tests = [
+            (Rc::new(Object::String(String::from("one"))), 1),
+            (Rc::new(Object::String(String::from("two"))), 2),
+            (Rc::new(Object::String(String::from("three"))), 3),
+            (Rc::new(Object::Integer(4)), 4),
+            (Rc::new(Object::Boolean(true)), 5),
+            (Rc::new(Object::Boolean(false)), 6),
+        ];
+
+        for (key, expected) in tests.iter() {
+            assert_eq!(
+                res.get(Rc::clone(key)).unwrap().get_integer().unwrap(),
+                *expected
+            );
         }
     }
 
